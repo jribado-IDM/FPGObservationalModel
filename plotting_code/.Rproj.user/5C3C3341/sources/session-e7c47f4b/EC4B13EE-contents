@@ -1,0 +1,281 @@
+################################################################################
+# MPG Partner data availability visualizations 
+# Author: Jessica Ribado - Institute for Disease Modeling 
+# Date: March 2025
+################################################################################
+
+################################################################################
+# set-up
+################################################################################
+# load libraries
+packages_to_install <- c('data.table', 'readxl', 'dplyr', 'tidyr', 'tibble', 
+                         'reshape2', 'stringr', 'ggplot2', 'ggpubr')
+for(p in packages_to_install){
+  if(!p %in% installed.packages()[,1]){
+    install.packages(p, repos = "http://cran.us.r-project.org")
+    library(p, character.only = TRUE)
+  }
+  library(p, character.only = TRUE)
+}  
+
+theme_set(theme_bw())
+
+SavePlots <- function(ggplot_obj, plot_path, name, width=8, height=4, dpi=100){
+  ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_", name), 
+         plot = ggplot_obj,
+         path = plot_path,
+         width = width, height = height, units = c("in"), 
+         dpi = dpi)
+}
+
+
+code_lookup <- tribble(
+  ~CODE, ~ALT,
+  "BAG", "KLD", # Additions from Broad's "Samples sequenced at Broad for the Gates project (2019-2022).xlsx"
+  "BAG", "KD",
+  "BAN", "BN",
+  "BAR", "BR",
+  "CSS", "RT_CS",
+  "CSS", "CS",
+  "DEG", "DE",
+  "DIA", "TAM",
+  "DIA", "TA",
+  "DWR", "RT_DW",
+  "DWR", "DW",
+  "GAB", "GA",
+  "GMK", "RT_GM",
+  "GMK", "GM",
+  "GOU", "SED",
+  "GOU", "SG",
+  "KAB", "VLG",
+  "KAB", "VG",
+  "KAF", "KF",
+  "KDG", "KG",
+  "THI", "KML",
+  "THI", "KNL",
+  "THI", "MK",
+  "KOU", "KTL",
+  "KOU", "KO",
+  "MAD", "TBA",
+  "MAD", "TB",
+  "MAK", "NK",
+  "MAK", "MK",
+  "MAK", "MAKO",
+  "MOU", "MDR",
+  "MOU", "MO",
+  "NAB", "NJC",
+  "NAB", "NA/NB/NC",
+  "NDO", "MNB",
+  "NDT", "RT_ND",
+  "NDT", "ND",
+  "NSN", "RT_NS",
+  "NSN", "NS",
+  "OUA", "VLG",
+  "OUA", "VG",
+  "ROB", "RT_RB",
+  "ROB", "RB",
+  "ROS", "RT_RS",
+  "ROS", "RS",
+  "SES", "SE",
+  "SES", "DI",
+  "SLP", "TH",
+  "SMS", "KM",
+  "SMS", "MS",
+  "TAO", "RT_TA",
+  "TAO", "TY",
+  "TBK", "TO",
+  "TAO", "RTP", # Additions from Kate's combined_model_predictions_inc24.xlsx & CollectionSites_Type (3).xlsx
+  "SAK", "SED",
+  "SMS", "KMS",
+  "DIA", "TAM",
+)
+
+project_dir <- "~/OneDrive - Bill & Melinda Gates Foundation/Malaria/Data/senegal"
+
+################################################################################
+# Barcode counts
+################################################################################
+site_admins_pre2022 <- readxl::read_excel(paste(project_dir, "Samples sequenced at Broad for the Gates project (2019-2022).xlsx", sep="/"), sheet="Collection_sites")[1:36,]
+site_admins_model <- readxl::read_excel(paste(project_dir, "combined_model_predictions_inc24.xlsx", sep="/"), sheet=1)
+missing_model_admins <- unique(site_admins_pre2022$CODE)[!unique(site_admins_pre2022$CODE) %in% unique(site_admins_model$Code)]
+old_to_merge <- dplyr::filter(site_admins_pre2022, CODE %in% missing_model_admins)[,1:5]
+names(old_to_merge) <- c("Region", "District", "Site", "Site_Type", "Code")
+site_codes_combined <- bind_rows(site_admins_model, old_to_merge)
+
+old_barcodes <- readxl::read_excel(paste(project_dir, "Senegal_AllBarcodes_20200701.xlsx", sep="/"), sheet=3)  %>% mutate_all(as.character)
+ndo_file <- paste(project_dir, "barcodes_NDO_1.30.2024_coi_results.xlsx", sep="/")
+# ndo_barcodes <- dplyr::bind_rows(lapply(readxl::excel_sheets(ndo_file), function(X) 
+#   readxl::read_excel(ndo_file, sheet = X) %>% mutate_all(as.character)))
+ndo_barcodes <- readxl::read_excel(ndo_file, sheet = "2020_PS") %>% mutate_all(as.character)
+
+excel_file <- paste(project_dir, "combined_barcodes_2.23.25.xlsx", sep="/")
+new_barcodes <- dplyr::bind_rows(lapply(readxl::excel_sheets(excel_file), function(X) 
+  readxl::read_excel(excel_file, sheet = X) %>% mutate_all(as.character)))
+all_barcodes <- dplyr::bind_rows(
+  dplyr::filter(old_barcodes, !Sample_Name %in% new_barcodes$Sample_Name) %>%
+    dplyr::left_join(., dplyr::rename(code_lookup, "ISO3" = "ALT")) %>%
+    dplyr::mutate(CODE = ifelse(is.na(CODE), ISO3, CODE)),
+  ndo_barcodes %>%
+    dplyr::filter(Year < 2021) %>%
+    unique() %>%
+    dplyr::left_join(., dplyr::rename(code_lookup, "ISO3" = "ALT")) %>%
+    dplyr::mutate(CODE = ifelse(is.na(CODE), ISO3, CODE)),
+  new_barcodes %>%
+    dplyr::left_join(., dplyr::rename(code_lookup, "ISO3" = "ALT")) %>%
+    dplyr::mutate(CODE = ifelse(is.na(CODE), ISO3, CODE))
+)
+
+ 
+barcode_summary <- 
+  dplyr::filter(all_barcodes, X < 2) %>% 
+  dplyr::group_by(CODE, Year) %>% summarise(count=n(), .groups = 'drop') %>%
+  dplyr::mutate(Year = as.numeric(Year)) %>%
+  dplyr::left_join(., dplyr::select(site_codes_combined, Region, District,  Site, Code) %>% 
+                      dplyr::rename("CODE"="Code") %>% unique()) %>%
+  dplyr::mutate(Region = stringr::str_to_title(Region),
+                District = stringr::str_to_title(District),
+                Site = stringr::str_to_title(Site))
+site_order <- dplyr::filter(barcode_summary, !is.na(Region)) %>% 
+  group_by(CODE) %>%
+  summarise(
+    n_years = n_distinct(Year),
+    first_year = min(Year, na.rm = TRUE)
+  ) %>%
+  arrange(first_year, desc(n_years)) %>%
+  pull(CODE)
+
+
+barcode_p <- dplyr::filter(barcode_summary, !is.na(Region)) %>% 
+  mutate(CODE = factor(CODE, levels = site_order)) %>%
+  ggplot(aes(y=as.numeric(Year), x=CODE, fill=as.numeric(count))) +
+  geom_tile() +
+  geom_text(aes(label=count), color="white", size=2.5) +
+  scale_fill_gradientn(
+    name = "Samples",
+    colours = c("#67322EFF", "#99610AFF", "#C38F16FF", "#6E948CFF", "#2C6B67FF", "#175449FF", "#122C43FF"),
+    values = scales::rescale(c(0, 25, 75, 150, 300)),  # more room for upper values
+    breaks = c(25, 50, 100, 200, 300),
+    limits = c(0, max(barcode_summary$count))
+  , n) + 
+  scale_y_continuous(
+    trans = "reverse",
+    breaks = seq(min(barcode_summary$Year), max(barcode_summary$Year), by = 1)
+  ) +
+  labs(title="Barcode samples in Senegal", y="Collection Years", x="Site or Clinic", fill="Samples") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  guides(fill = "none")
+
+SavePlots(barcode_p, project_dir, "SenegalBarcodeSamplesCodesFilterX1.png", 
+          width = 6.5, height=4, dpi=300)
+
+
+################################################################################
+# Temporal sampling variability
+################################################################################
+metadata_pre2023 <- data.table::fread(paste(project_dir, "pre2023_SenegalSampleInventory.txt", sep="/")) %>%
+  dplyr::mutate(`Date of Collection` = as.Date(`Date of Collection`, format = "%d/%m/%Y"))
+metadata_2024 <- data.table::fread(paste(project_dir, "2024_SenegalSampleInventory.txt", sep="/")) %>%
+  dplyr::filter((`RDT pos/neg\n(1=+, 2=-)` == 1) & (`Processing Status` == "Barcoded")) %>%
+  rename("Date of Collection"="Date of Sample Collection (DD/MM/YYYY)",
+         "Region"="region",
+         "Code"="Site Code") %>%
+  dplyr::mutate(Raw_Name = str_sub(`StudyID (Senegal ID)`, 6, -1),
+                `Date of Collection` = as.Date(`Date of Collection`, format = "%d/%m/%Y"))
+
+
+site_admins_merged <- readxl::read_excel(paste(project_dir, "CollectionSites_Type (3).xlsx", sep="/"), sheet=1)
+merged_data <- dplyr::bind_rows(
+  left_join(dplyr::filter(new_barcodes, Year < 2023),
+            dplyr::select(metadata_pre2023, `Other name 1`, `Date of Collection`) %>% rename("Sample_Name"="Other name 1")),
+  left_join(dplyr::filter(new_barcodes, Year > 2022), 
+            dplyr::select(metadata_2024, Raw_Name, `Date of Collection`))) %>%
+  dplyr::mutate(collection_known = ifelse(is.na(`Date of Collection`), "No", "Yes"),
+                collection_month = format(as.Date(`Date of Collection`), "%Y-%m"))  %>%
+  dplyr::left_join(., dplyr::rename(code_lookup, "ISO3" = "ALT")) %>%
+  dplyr::mutate(CODE = ifelse(is.na(CODE), ISO3, CODE),
+                Year = as.numeric(Year))
+
+district_colors <- c(
+  Bakel = "#A6CEE3",
+  Diouloulou = "#1F78B4",
+  Diourbel = "#B2DF8A",
+  Kanel = "#33A02C",
+  Kaolack = "#FB9A99",
+  Kedougou = "#E31A1C",
+  Kolda = "#FDBF6F",
+  Tambacounda = "#FF7F00",
+  Touba = "#CAB2D6",
+  Velingara = "#6A3D9A"
+)
+
+
+p <- merged_data %>% 
+  dplyr::inner_join(., dplyr::select(site_admins_merged, `REGION (RM)`,	`DISTRICT (DS)`, `SITE (PS)`, CODE)) %>%
+  mutate(`DISTRICT (DS)` = stringr::str_to_title(`DISTRICT (DS)`)) %>%
+  arrange(factor(`DISTRICT (DS)`, levels = names(district_colors)), CODE) %>%
+  mutate(CODE = factor(CODE, levels = unique(CODE))) %>%
+  dplyr::filter(collection_known == "Yes" ) %>%
+  ggplot(aes(x=gsub("2024-", "", collection_month), y=after_stat(count), fill=`DISTRICT (DS)`)) +
+  geom_bar() +
+  scale_fill_manual(values = district_colors) +
+  facet_grid(CODE~., scales="free_y") +
+  labs(x="Collection month (2024)", y="Barcode sequenced samples", fill="District")
+SavePlots(p, project_dir, "2024_MonthlySenegalSampleCounts.png", width = 7, height=6)
+
+
+
+
+################################################################################
+# WGS
+################################################################################
+all_wgs <- data.table::fread(paste(project_dir, "202503_SenegalTerraInventory.tsv", sep="/"), sep="\t")
+
+wgs_summary <- dplyr::group_by(all_wgs, Code, Year) %>% summarise(count=n())
+# Plot
+wgs_p <- dplyr::filter(wgs_summary, !is.na(Code)) %>% 
+  ggplot(aes(x=as.numeric(Year), y=Code, fill=as.numeric(count))) +
+  geom_tile() +
+  geom_text(aes(label=count), color="white", size=2) +
+  labs(title="WGS samples in Senegal", x="Year", y="Region", fill="Samples")
+SavePlots(wgs_p, project_dir, "202503_SenegalWGSSamples.png", width = 5, height=6)
+
+################################################################################
+# Combined
+combined_counts <- dplyr::bind_rows(
+  barcode_summary %>% mutate(method="Barocde") %>% rename("Code"="ISO3"), 
+  wgs_summary %>% mutate(method="WGS"))
+
+
+################################################################################
+# GR - GenMoz to Match color scheme for sample sizes 
+genmoz_data <- read.delim("~/OneDrive - Bill & Melinda Gates Foundation/Malaria/Data/mozambique/GenMoz1DataAudit.csv", sep=",") %>%
+  select(Province, District, contains("total")) %>%
+  pivot_longer(cols=contains("total"), names_to = "Year", values_to = "count") %>%
+  dplyr::mutate(Year = readr::parse_number(Year),
+                District = ifelse(grepl(",", District), "Several", District))
+  
+genmoz_p <- genmoz_data %>%
+  dplyr::filter(!is.na(count)) %>%
+  ggplot(aes(y=as.numeric(Year), x=paste(Province, District, sep="-"), fill=as.numeric(count))) +
+  geom_tile() +
+  geom_text(aes(label=count), color="white", size=2.5) +
+  scale_fill_gradientn(
+    name = "Samples",
+    colours = c("#67322EFF", "#99610AFF", "#C38F16FF", "#6E948CFF", "#2C6B67FF", "#175449FF", "#122C43FF"),
+    values = scales::rescale(c(0, 25, 75, 150, 300, 700)),  # more room for upper values
+    breaks = c(25, 50, 100, 200, 300, 500, 700),
+    limits = c(0, max(barcode_summary$count))
+  ) + 
+  scale_y_continuous(
+    trans = "reverse",
+    breaks = seq(min(genmoz_data$Year), max(genmoz_data$Year), by = 1)
+  ) +
+  labs(title="Amplicon samples in Mozambique - GenMoz 1", y="Collection Years", x="Province-District", fill="Samples") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  guides(fill = "none")
+  
+SavePlots(genmoz_p, 
+          "~/OneDrive - Bill & Melinda Gates Foundation/Malaria/Data/mozambique", 
+          "2022-2023GenMozSampleCounts.png", width = 5, height=4, dpi=400)
+
+
