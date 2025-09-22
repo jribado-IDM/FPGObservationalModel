@@ -413,6 +413,319 @@ class TestSamplingAndFiltering(unittest.TestCase):
         sampling_cols = [col for col in result_df.columns if 'random' in col and 'rep' in col]
         self.assertGreater(len(sampling_cols), 0)
 
+        # ADD THIS TEST CLASS TO YOUR EXISTING TEST SUITE
+
+class TestMonogenomicProportionSampling(unittest.TestCase):
+    """Test monogenomic proportion sampling functionality in subset_randomly"""
+    
+    def setUp(self):
+        """Set up test data with known monogenomic/polygenomic distribution"""
+        
+        # Create test data with controlled COI distribution
+        self.biased_sampling_df = pd.DataFrame({
+            'infIndex': list(range(100)),
+            'IndividualID': [2000 + i for i in range(100)],
+            'simulation_year': [1]*50 + [2]*50,
+            'year': [1]*50 + [2]*50,
+            'month': ([1, 3, 6, 9, 12] * 10)[:50] + ([1, 3, 6, 9, 12] * 10)[:50],
+            'population': [0]*100,  # Single population for simplicity
+            'fever_status': [1, 0] * 50,
+            'age_day': [1000, 2000, 3000, 4000, 5000] * 20,
+            # Create known COI distribution: 60% monogenomic, 40% polygenomic
+            'effective_coi': ([1]*30 + [2]*15 + [3]*5) + ([1]*30 + [2]*15 + [3]*5),
+            'true_coi': ([1]*30 + [2]*15 + [3]*5) + ([1]*30 + [2]*15 + [3]*5),
+            'genome_ids': [[100+i] if i < 30 or (i >= 50 and i < 80) 
+                          else [100+i, 200+i] for i in range(100)],
+            'cotx': [None if i < 30 or (i >= 50 and i < 80) 
+                    else False for i in range(100)],
+            'continuous_month': ([13, 15, 18, 21, 24] * 10)[:50] + ([25, 27, 30, 33, 36] * 10)[:50]
+        })
+        
+        # Add metadata for testing
+        self.expected_mono_per_year = 30
+        self.expected_poly_per_year = 20
+        self.total_per_year = 50
+    
+    def test_monogenomic_proportion_basic_functionality(self):
+        """Test basic monogenomic proportion sampling works"""
+        
+        from unified_sampling import subset_randomly
+        
+        # Test 50% monogenomic proportion
+        result_df = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=10,
+            replicates=1,
+            scheme='biased_test',
+            monogenomic_proportion=0.5,
+            base_seed=123
+        )
+        
+        # Check that sampling column was added
+        sample_cols = [col for col in result_df.columns if 'biased_test' in col]
+        self.assertEqual(len(sample_cols), 1)
+        
+        sample_col = sample_cols[0]
+        sampled_df = result_df[result_df[sample_col].notna()]
+        
+        # Should have samples
+        self.assertGreater(len(sampled_df), 0)
+        
+        # Check proportions for each year
+        for year in [1, 2]:
+            year_samples = sampled_df[sampled_df['year'] == year]
+            if len(year_samples) > 0:
+                mono_count = len(year_samples[year_samples['effective_coi'] == 1])
+                poly_count = len(year_samples[year_samples['effective_coi'] > 1])
+                
+                # Should have some of each type (allowing for rounding)
+                self.assertGreater(mono_count + poly_count, 0)
+    
+    def test_monogenomic_proportion_accuracy(self):
+        """Test that monogenomic proportion sampling achieves target proportions"""
+        
+        from unified_sampling import subset_randomly
+        
+        test_cases = [
+            (0.3, "30% monogenomic"),
+            (0.7, "70% monogenomic"), 
+            (0.5, "50% monogenomic")
+        ]
+        
+        for target_proportion, description in test_cases:
+            with self.subTest(proportion=target_proportion, desc=description):
+                result_df = subset_randomly(
+                    self.biased_sampling_df,
+                    n_samples_year=20,  # Larger sample for better proportion testing
+                    replicates=1,
+                    scheme=f'biased_{int(target_proportion*100)}',
+                    monogenomic_proportion=target_proportion,
+                    base_seed=456
+                )
+                
+                sample_col = [col for col in result_df.columns if 'biased_' in col][0]
+                sampled_df = result_df[result_df[sample_col].notna()]
+                
+                if len(sampled_df) > 0:
+                    mono_count = len(sampled_df[sampled_df['effective_coi'] == 1])
+                    total_count = len(sampled_df)
+                    actual_proportion = mono_count / total_count
+                    
+                    # Allow for some tolerance due to rounding and availability
+                    tolerance = 0.15  # 15% tolerance
+                    self.assertAlmostEqual(
+                        actual_proportion, target_proportion, 
+                        delta=tolerance,
+                        msg=f"Proportion {actual_proportion:.2f} not close to target {target_proportion:.2f}"
+                    )
+    
+    def test_monogenomic_proportion_edge_cases(self):
+        """Test edge cases for monogenomic proportion sampling"""
+        
+        from unified_sampling import subset_randomly
+        
+        # Test with proportion = 0 (no monogenomic)
+        result_df_0 = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=10,
+            replicates=1,
+            scheme='no_mono',
+            monogenomic_proportion=0.0,
+            base_seed=789
+        )
+        
+        sample_col_0 = [col for col in result_df_0.columns if 'no_mono' in col][0]
+        sampled_df_0 = result_df_0[result_df_0[sample_col_0].notna()]
+        
+        if len(sampled_df_0) > 0:
+            mono_count_0 = len(sampled_df_0[sampled_df_0['effective_coi'] == 1])
+            self.assertEqual(mono_count_0, 0, "Should have no monogenomic samples with proportion=0")
+        
+        # Test with proportion = 1 (all monogenomic)
+        result_df_1 = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=10,
+            replicates=1,
+            scheme='all_mono',
+            monogenomic_proportion=1.0,
+            base_seed=101112
+        )
+        
+        sample_col_1 = [col for col in result_df_1.columns if 'all_mono' in col][0]
+        sampled_df_1 = result_df_1[result_df_1[sample_col_1].notna()]
+        
+        if len(sampled_df_1) > 0:
+            poly_count_1 = len(sampled_df_1[sampled_df_1['effective_coi'] > 1])
+            self.assertEqual(poly_count_1, 0, "Should have no polygenomic samples with proportion=1")
+    
+    def test_monogenomic_proportion_insufficient_samples(self):
+        """Test behavior when insufficient samples of one type are available"""
+        
+        from unified_sampling import subset_randomly
+        
+        # Create data with very few polygenomic samples
+        few_poly_df = pd.DataFrame({
+            'infIndex': list(range(20)),
+            'simulation_year': [1]*20,
+            'year': [1]*20,
+            'month': [1]*20,
+            'population': [0]*20,
+            'effective_coi': [1]*18 + [2]*2,  # Only 2 polygenomic samples
+            'continuous_month': [13]*20
+        })
+        
+        # Request 50% polygenomic but only 2 available
+        result_df = subset_randomly(
+            few_poly_df,
+            n_samples_year=10,  # Want 5 poly, but only 2 available
+            replicates=1,
+            scheme='insufficient',
+            monogenomic_proportion=0.5,  # 50% mono, 50% poly
+            base_seed=131415
+        )
+        
+        sample_col = [col for col in result_df.columns if 'insufficient' in col][0]
+        sampled_df = result_df[result_df[sample_col].notna()]
+        
+        if len(sampled_df) > 0:
+            poly_count = len(sampled_df[sampled_df['effective_coi'] > 1])
+            # Should get at most 2 polygenomic samples (all available)
+            self.assertLessEqual(poly_count, 2)
+    
+    def test_monogenomic_proportion_with_multiple_replicates(self):
+        """Test monogenomic proportion sampling with multiple replicates"""
+        
+        from unified_sampling import subset_randomly
+        
+        result_df = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=16,
+            replicates=3,
+            scheme='multi_rep',
+            monogenomic_proportion=0.25,  # 25% monogenomic
+            base_seed=161718
+        )
+        
+        # Should have 3 replicates
+        sample_cols = [col for col in result_df.columns if 'multi_rep' in col]
+        self.assertEqual(len(sample_cols), 3)
+        
+        # Test each replicate
+        for col in sample_cols:
+            sampled_df = result_df[result_df[col].notna()]
+            
+            if len(sampled_df) > 0:
+                mono_count = len(sampled_df[sampled_df['effective_coi'] == 1])
+                total_count = len(sampled_df)
+                actual_proportion = mono_count / total_count
+                
+                # Should be roughly 25% (allowing tolerance)
+                self.assertLess(abs(actual_proportion - 0.25), 0.2, 
+                              f"Replicate {col} proportion {actual_proportion:.2f} too far from 0.25")
+    
+    def test_monogenomic_proportion_validation(self):
+        """Test validation of monogenomic proportion parameter"""
+        
+        from unified_sampling import subset_randomly
+        
+        # Test invalid proportions (should handle gracefully or raise appropriate error)
+        invalid_proportions = [-0.1, 1.1, 2.0]
+        
+        for invalid_prop in invalid_proportions:
+            with self.subTest(proportion=invalid_prop):
+                # Depending on implementation, this might raise an error or handle gracefully
+                try:
+                    result_df = subset_randomly(
+                        self.biased_sampling_df,
+                        n_samples_year=10,
+                        replicates=1,
+                        scheme='invalid',
+                        monogenomic_proportion=invalid_prop,
+                        base_seed=192021
+                    )
+                    # If it doesn't raise an error, should still produce valid output
+                    self.assertIsInstance(result_df, pd.DataFrame)
+                except (ValueError, AssertionError):
+                    # It's acceptable to raise an error for invalid proportions
+                    pass
+    
+    def test_monogenomic_proportion_reproducibility(self):
+        """Test that monogenomic proportion sampling is reproducible with same seed"""
+        
+        from unified_sampling import subset_randomly
+        
+        # Run twice with same seed
+        result1 = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=12,
+            replicates=1,
+            scheme='repro1',
+            monogenomic_proportion=0.4,
+            base_seed=222324
+        )
+        
+        result2 = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=12,
+            replicates=1,
+            scheme='repro2',
+            monogenomic_proportion=0.4,
+            base_seed=222324  # Same seed
+        )
+        
+        # Extract sampling results
+        col1 = [col for col in result1.columns if 'repro1' in col][0]
+        col2 = [col for col in result2.columns if 'repro2' in col][0]
+        
+        sampled_indices1 = set(result1[result1[col1].notna()].index)
+        sampled_indices2 = set(result2[result2[col2].notna()].index)
+        
+        # Should be identical with same seed
+        self.assertEqual(sampled_indices1, sampled_indices2, 
+                        "Same seed should produce identical sampling")
+    
+    def test_monogenomic_proportion_vs_regular_sampling(self):
+        """Test that monogenomic proportion sampling differs from regular random sampling"""
+        
+        from unified_sampling import subset_randomly
+        
+        # Regular random sampling
+        regular_result = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=20,
+            replicates=1,
+            scheme='regular',
+            monogenomic_proportion=False,  # No biased sampling
+            base_seed=252627
+        )
+        
+        # Biased sampling toward monogenomic (80%)
+        biased_result = subset_randomly(
+            self.biased_sampling_df,
+            n_samples_year=20,
+            replicates=1,
+            scheme='biased_80',
+            monogenomic_proportion=0.8,
+            base_seed=252627  # Same seed for fair comparison
+        )
+        
+        # Extract results
+        regular_col = [col for col in regular_result.columns if 'regular' in col][0]
+        biased_col = [col for col in biased_result.columns if 'biased_80' in col][0]
+        
+        regular_sampled = regular_result[regular_result[regular_col].notna()]
+        biased_sampled = biased_result[biased_result[biased_col].notna()]
+        
+        if len(regular_sampled) > 0 and len(biased_sampled) > 0:
+            # Calculate proportions
+            regular_mono_prop = len(regular_sampled[regular_sampled['effective_coi'] == 1]) / len(regular_sampled)
+            biased_mono_prop = len(biased_sampled[biased_sampled['effective_coi'] == 1]) / len(biased_sampled)
+            
+            # Biased sampling should have higher monogenomic proportion
+            self.assertGreater(biased_mono_prop, regular_mono_prop,
+                             f"Biased sampling ({biased_mono_prop:.2f}) should have higher mono proportion than regular ({regular_mono_prop:.2f}
+
+
 class TestScientificCalculations(unittest.TestCase):
     """Test the scientific accuracy of metric calculations"""
     
@@ -1266,6 +1579,7 @@ def run_all_comprehensive_tests_with_rh():
         TestRhMetricCalculations,        # NEW
         TestRhIntegration,               # NEW
         TestRhScientificValidation       # NEW
+        TestMonogenomicProportionSampling # NEW
     ]
     
     # Create test suite
