@@ -7,7 +7,16 @@ Documentation version 1.0 - September 2025
 This repository contains scripts for EMOD's Full Parasite Genetics output to convert modeled results into recapitulative sampling for genomic surveillance. The observational model options allow for curated population sampling and then calculated genetic metrics for user specified combinations of samples, and optionally within epidemioligcally relevant nested populations within a group of samples. More options in sampling and metrics can be edited or expanded to match empirical data analyses. 
 
 ## Environment set-up
-TODO: Create requirements.txt with minimal essential packages.
+
+This model still uses versions of IDM's improved tskit IBD calculations for speed:
+https://github.com/InstituteforDiseaseModeling/tskit/blob/idm-ibx-calculations/IDMEXT.md. Follow the set up instructions in the activated virtual env after the initial build. 
+
+~~~
+python3 -m venv fpg_observational_model
+source fpg_observational_model/bin/activate
+pip install -r requirements.txt
+# Install the IDM tskit improvements for IBx calculations
+~~~
 
 ## Config Parameters
 
@@ -59,11 +68,11 @@ There are three broad method options for sampling:
 Above options will calculate metrics for all samples in a population for each sampling method specified. Additionally, comparisons within subpopulations to compare with all infections in the sampled population are supported. This allows for the investigation of metrics that may be more sensitive within groups or smaller timescales.
 
  The subpopulation options supported include:
-    - 'monthly':  Provide summary statistics by month in addition to year
-    - 'populations':  Defined by the population node in EMOD
-    - 'polygenomic':  Is polygenomic = 1, else monogenomic = 0
-    - 'symptomatic':  Is symptomatic = 1, else asymptomatic = 0
-    - 'age_bins':  Default age bins: 0-5, 5-15, 15+
+- 'monthly':  Provide summary statistics by month in addition to year
+- 'populations':  Defined by the population node in EMOD
+- 'polygenomic':  Is polygenomic = 1, else monogenomic = 0
+- 'symptomatic':  Is symptomatic = 1, else asymptomatic = 0
+- 'age_bins':  Default age bins: 0-5, 5-15, 15+
 
 ### Genetic metrics
 
