@@ -27,11 +27,11 @@ def get_default_config():
         'sampling_configs': {
             'random': {
                 'method': 'random',
-                'n_samples_year': 20,
+                'n_samples_year': 100,
                 'replicates': 2,
                 'method_params': {
                     'population_proportions': [1, 0], # Use to sample from the source or sink only, equally, etc. Within population comparisons of genetic metrics can be specified below - just make sure to total number of samples per year * proportion reflects the numbers you want per population.
-                    'monogenomic_proportion': 0.2, # Set to False if sampling randomly 
+                    'monogenomic_proportion': False, # Set to False if sampling randomly 
                     'equal_monthly': False}
             },
             # 'seasonal': {
@@ -61,6 +61,7 @@ def get_default_config():
             'unique_genome_proportion': True # Will calculate both the proportion of unique genomes in the sampled infections to replicate phasing and from monogenomic samples with an effective COI of 1  only to match barcode limits.
         },
         'subpopulation_comparisons': { # Supported for yearly and seasonal temporal sampling schemes, not age-based sampling. 
+            'add_monthly': True,  # Whether to add monthly comparisons within each year
             'populations': True,  # Defined by the population node in EMOD
             'polygenomic': True,  # Is polygenomic = 1, else monogenomic = 0
             'symptomatic': True,  # Is symptomatic = 1, else asymptomatic = 0
@@ -69,6 +70,106 @@ def get_default_config():
     }
     
     return observational_model_config
+
+def load_matrix_safely(file_path, max_retries=3, use_local_copy=True):
+    """
+    Safely load numpy matrix with memory mapping using raw reconstruction.
+    """
+    import os
+    import numpy as np
+    import tempfile
+    
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return None
+    
+    print(f"Loading matrix with mmap from: {file_path}")
+    
+    # Method 1: Try standard mmap first
+    try:
+        array = np.load(file_path, mmap_mode='r')
+        print(f"Successfully loaded with standard mmap, shape: {array.shape}")
+        return array
+    except Exception as e1:
+        print(f"Standard mmap failed: {e1}")
+    
+    # Method 2: Raw reconstruction with manual mmap
+    try:
+        print(f"Method 2: Raw reconstruction with mmap")
+        with open(file_path, 'rb') as f:
+            # Read header info
+            magic = f.read(6)
+            if magic != b'\x93NUMPY':
+                raise ValueError("Not a numpy file")
+            
+            major, minor = f.read(2)
+            
+            if major == 1:
+                header_len = np.frombuffer(f.read(2), dtype=np.uint16)[0]
+            else:
+                header_len = np.frombuffer(f.read(4), dtype=np.uint32)[0]
+            
+            header = f.read(header_len).decode('latin1')
+            
+            # Clean up header
+            import ast
+            import re
+            header_clean = re.sub(r'\s+', ' ', header.strip())
+            header_dict = ast.literal_eval(header_clean)
+            
+            shape = header_dict['shape']
+            dtype = header_dict['descr']
+            fortran_order = header_dict['fortran_order']
+            
+            # Calculate data offset
+            data_offset = f.tell()
+            
+        print(f"Parsed - Shape: {shape}, Dtype: {dtype}, Data offset: {data_offset}")
+        
+        # Create memory-mapped array directly from file
+        array = np.memmap(file_path, dtype=dtype, mode='r', 
+                         offset=data_offset, shape=shape,
+                         order='F' if fortran_order else 'C')
+        
+        print(f"Successfully created memmap with shape: {array.shape}")
+        return array
+        
+    except Exception as e2:
+        print(f"Mmap reconstruction failed: {e2}")
+        
+        # Fallback: Load into memory then create temp mmap file
+        try:
+            print("Fallback: Creating temporary mmap file")
+            # First load the data using Method 3 from before
+            with open(file_path, 'rb') as f:
+                # ... same header parsing as above ...
+                f.seek(data_offset)
+                data = np.frombuffer(f.read(), dtype=dtype)
+                
+                if fortran_order:
+                    array = data.reshape(shape, order='F')
+                else:
+                    array = data.reshape(shape, order='C')
+            
+            # Create a temporary file for memory mapping
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.npy')
+            np.save(temp_file.name, array)
+            temp_file.close()
+            
+            # Load as mmap from temp file
+            mmap_array = np.load(temp_file.name, mmap_mode='r')
+            
+            # Store temp filename for cleanup (you'd need to handle this)
+            mmap_array._temp_file = temp_file.name
+            
+            print(f"Created temporary mmap file: {temp_file.name}")
+            return mmap_array
+            
+        except Exception as e3:
+            print(f"Temp mmap fallback failed: {e3}")
+    
+    print(f"All mmap methods failed for {file_path}")
+    return None
 
 
 def update_matrix_indices(sample_df):
@@ -216,7 +317,9 @@ def run_observational_model(
         user_specified_ibx.append('ibd')  # Fixed: changed from 'ibx' to 'ibd'
         root_matrix_path = f'{emod_output_path}/roots.npy'
         if os.path.exists(root_matrix_path):
-            ibd_matrix = np.load(root_matrix_path, mmap_mode='r')   
+            # mmap_mode removed since it does not work on VM, conflicts with memory mapping between simulations for now. Worth revisiting for dtk_post_process performance improvements.
+            # ibd_matrix = np.load(root_matrix_path, mmap_mode='r')   
+            ibd_matrix = load_matrix_safely(root_matrix_path)
             register_matrix('ibd_matrix', ibd_matrix)
         else:
             print(f"Warning: {root_matrix_path} not found, IBD calculations will be skipped") 
@@ -224,8 +327,11 @@ def run_observational_model(
     if config['metrics']['identity_by_state'] or config['metrics'].get('heterozygosity', True) or config['metrics']['rh']:
         user_specified_ibx.append('ibs')
         genotype_matrix_path = f'{emod_output_path}/variants.npy'
+        print(genotype_matrix_path)
         if os.path.exists(genotype_matrix_path):
-            ibs_matrix = np.load(genotype_matrix_path, mmap_mode='r')
+            # mmap_mode removed since it does not work on VM, conflicts with memory mapping between simulations for now. Worth revisiting for dtk_post_process performance improvements.
+            # ibs_matrix = np.load(genotype_matrix_path, mmap_mode='r')
+            ibs_matrix = load_matrix_safely(genotype_matrix_path)
         else:
             print(f"Error: {genotype_matrix_path} not found. Loading test data.") 
             ibs_matrix = np.load("test_data/test_variants.npy", mmap_mode='r')
@@ -240,8 +346,9 @@ def run_observational_model(
         )
 
     # Run metric calculations
-    sample_df['group_year'] = sample_df['intervention_year'].copy() if 'intervention_year' in sample_df.columns else sample_df['simulation_year'].copy() 
-    sample_df['group_month'] = sample_df['intervention_month'].copy() if 'intervention_month' in sample_df.columns else sample_df['continuous_month'].copy() 
+    sample_df['group_year'] = sample_df['intervention_year'].copy() if 'intervention_year' in sample_df.columns else sample_df['simulation_year'].copy()
+    if config['subpopulation_comparisons'].get('add_monthly', True):
+        sample_df['group_month'] = sample_df['intervention_month'].copy() if 'intervention_month' in sample_df.columns else sample_df['continuous_month'].copy() 
     all_summaries, all_infection_ibx, all_ibx_dist_dict = run_time_summaries(
         sample_df, 
         subpop_config=config['subpopulation_comparisons'],
@@ -256,8 +363,10 @@ def run_observational_model(
     all_summaries.to_csv(summary_output_filepath, index=False)
     sample_output_filepath = f'{output_path}/{sim_name}_FPG_SampledInfections.csv'
     # Merge in individual IBx results for sampled infections
-    sample_df_merged = sample_df.merge(all_infection_ibx, on='infIndex', how='left')
-    sample_df_merged.to_csv(sample_output_filepath, index=False)
+    print(all_infection_ibx)
+    if not all_infection_ibx.empty:
+        sample_df = sample_df.merge(all_infection_ibx, on='infIndex', how='left')
+    sample_df.to_csv(sample_output_filepath, index=False)
 
     save_ibx_distributions = True
     if save_ibx_distributions:
@@ -272,9 +381,57 @@ def run_observational_model(
         print(f"Saved summary output to {summary_output_filepath}")
         print(f"Saved sample output to {sample_output_filepath}")
 
-    return all_summaries, sample_df
+    return 
 
 
+#####################################################################################
+# Parallelizable wrapper function
+#####################################################################################
+def process_file(file_row, output_summary_dir, config_path=None, verbose=False):
+    """
+    Process a single file for parallel execution.
+    
+    Parameters:
+        file_row: pandas Series or dict with 'output_name' and 'input_dir' columns
+        output_summary_dir: Directory to save outputs
+        config_path: Path to config file (optional)
+        verbose: Whether to print verbose output
+        
+    Returns:
+        str: Name of processed simulation
+    """
+    try:
+        # Extract information from the row
+        sim_name = file_row['output_name']
+        emod_output_path = file_row['input_dir']
+        
+        # Use default config if not specified
+        if config_path is None or not os.path.exists(config_path):
+            config_path = ""  # Will trigger default config usage
+            
+        # Create output directory for this simulation
+        output_path = os.path.join(output_summary_dir, sim_name)
+        
+        # Run the observational model
+        result = run_observational_model(
+            sim_name=sim_name,
+            emod_output_path=emod_output_path,
+            config_path=config_path,
+            output_path=output_path,
+            verbose=verbose
+        )
+        
+        return f"SUCCESS: {sim_name}"
+        
+    except Exception as e:
+        error_msg = f"ERROR processing {file_row.get('output_name', 'unknown')}: {str(e)}"
+        if verbose:
+            import traceback
+            print(f"{error_msg}\n{traceback.format_exc()}")
+        return error_msg
+
+
+# Single file test
 if __name__ == "__main__":
     # Example usage
     sim_name = "test_simulation"
@@ -283,7 +440,7 @@ if __name__ == "__main__":
     output_path = "output"          
     
     try:
-        summaries, samples = run_observational_model(
+        run_observational_model(
             sim_name=sim_name,
             emod_output_path=emod_output_path,
             config_path=config_path,

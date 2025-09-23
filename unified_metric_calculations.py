@@ -66,7 +66,7 @@ def identify_nested_comparisons(df, sampling_column_name,
                 print("User specified nested comparisons by population, but only one population is available.")
 
         if config.get('polygenomic', False):
-            df['is_polygenomic'] = df['true_coi'].apply(lambda x: True if x > 1 else False) 
+            df['is_polygenomic'] = df['effective_coi'].apply(lambda x: True if x > 1 else False) 
             polygenomic_vals = df['is_polygenomic'].unique()
             if True in polygenomic_vals and False in polygenomic_vals:
                 nested_indices['polygenomic'] = df.groupby([time_group, 'is_polygenomic'])['infIndex'].apply(list).to_dict()
@@ -504,7 +504,7 @@ save_ibx_distributions=True):
             
         # Step 3: Individual IBx calculations for polygenomic infections
             if individual_ibx_calculation:
-                polygenomic_subset = year_subset[year_subset['true_coi'] > 1]
+                polygenomic_subset = year_subset[year_subset['effective_coi'] > 1]
                 polygenomic_dict = dict(zip(polygenomic_subset['infIndex'], polygenomic_subset['ibx_index']))
 
                 for inf_id, ibx_list in polygenomic_dict.items():
@@ -555,7 +555,6 @@ save_ibx_distributions=True):
             for ibx_category in user_ibx_categories:
                 ibx_dist_dict = {}
                 print(f"\nProcessing IBx category: {ibx_category}")
-                
                 try:
                     ibx_summary, ibx_inf, ibx_dist_dict = process_nested_ibx(
                         sampling_df,  
@@ -568,7 +567,10 @@ save_ibx_distributions=True):
 
                     if rh_calculation and ibx_category == 'ibs':
                         if 'polygenomic' not in nested_dict.keys():
-                            raise ValueError("Warning: No monogenomic versus polygenomic comparisons found. Rerun IBx with polygenomic as a subpopulation comparisons.")
+                            if len(sampling_df['effective_coi'].unique()) != 1:
+                                print("Warning: No polygenomic subpopulation comparisons found. Rerun IBx with polygenomic as a subpopulation comparisons.")
+                            else:
+                                continue    
                         
                         else:
                             # Only run R_h for year or seasonal level comparisons - can expand to do this with all subpopulations later if needed.
@@ -638,6 +640,7 @@ save_ibx_distributions=True):
         if ibx_category not in all_ibx_dist_dict:
             all_ibx_dist_dict[ibx_category] = {}
         all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
+        print(all_ibx_dist_dict.keys())
 
         all_summary_dataframes.append(summary_stats)
         print(f"Final summary for {sampling_column}: {summary_stats.shape}")
