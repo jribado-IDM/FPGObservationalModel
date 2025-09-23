@@ -30,7 +30,7 @@ def get_matrix(name):
 #####################################################################################
 def identify_nested_comparisons(df, sampling_column_name, 
     config = None, 
-    add_monthly=True):
+    add_monthly=False):
     """
     Generate a list of infections within sampling schemes for looping through nested comparisons. 
     """
@@ -132,17 +132,17 @@ def comprehensive_group_summary(group):
     result = pd.Series({
         'n_infections': n,
         'true_poly_coi_count': poly_count,
-        'true_poly_coi_prop': poly_prop,
+        'true_poly_coi_prop': round(poly_prop, 3),
         'effective_poly_coi_count': epoly_count, 
-        'effective_poly_coi_prop': epoly_prop,   
+        'effective_poly_coi_prop': round(epoly_prop, 3),   
         'all_genomes_total_count': all_genome_stats['total'],
         'all_genomes_unique_count': all_genome_stats['unique'],
-        'all_genomes_unique_prop': all_genome_stats['unique_prop'],
+        'all_genomes_unique_prop': round(all_genome_stats['unique_prop'], 3),
         'mono_genomes_total_count': mono_genome_stats['total'],
         'mono_genomes_unique_count': mono_genome_stats['unique'],
-        'mono_genomes_unique_prop': mono_genome_stats['unique_prop'],
+        'mono_genomes_unique_prop': round(mono_genome_stats['unique_prop'], 3),
         'cotransmission_count': cotrans_stats['count'],
-        'cotransmission_prop': cotrans_stats['prop'],
+        'cotransmission_prop': round(cotrans_stats['prop'], 3),
     })
     
     # Add the comprehensive stats
@@ -505,11 +505,12 @@ save_ibx_distributions=True):
         # Step 3: Individual IBx calculations for polygenomic infections
             if individual_ibx_calculation:
                 polygenomic_subset = year_subset[year_subset['effective_coi'] > 1]
-                polygenomic_dict = dict(zip(polygenomic_subset['infIndex'], polygenomic_subset['ibx_index']))
+                if not polygenomic_subset.empty:
+                    polygenomic_dict = dict(zip(polygenomic_subset['infIndex'], polygenomic_subset['ibx_index']))
 
-                for inf_id, ibx_list in polygenomic_dict.items():
-                    distribution = ibx_distribution(ibx_list, ibx_matrix)
-                    individual_ibx_dict[inf_id] = weighted_describe_scipy(distribution, ibx_prefix) 
+                    for inf_id, ibx_list in polygenomic_dict.items():
+                        distribution = ibx_distribution(ibx_list, ibx_matrix)
+                        individual_ibx_dict[inf_id] = weighted_describe_scipy(distribution, ibx_prefix) 
 
     if ibx_summ_list:
         ibx_results_df = pd.DataFrame(ibx_summ_list)
@@ -526,7 +527,7 @@ save_ibx_distributions=True):
 
 def run_time_summaries(sample_df,
 subpop_config = None,
-add_monthly = True, 
+add_monthly = False, 
 user_ibx_categories = None,
 individual_ibx_calculation=True,
 rh_calculation=True,
@@ -587,20 +588,21 @@ save_ibx_distributions=True):
                                     year_df = sampling_df[sampling_df['infIndex'].isin(sub_data)]  
                                     year_df = year_df.merge(pd.DataFrame(ibx_inf), on='infIndex', how='left')
 
-                                    rh_summary, sample_rh = calculate_rh(year_df, monogenomic_dict[sub_key])
+                                    if sub_key in monogenomic_dict.keys():
+                                        rh_summary, sample_rh = calculate_rh(year_df, monogenomic_dict[sub_key])
 
-                                    rh_summary['comparison_type'] = key  
-                                    rh_summary['year_group'] = str(sub_key)
-                                    rh_summary['subgroup'] = None
-                                    yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+                                        rh_summary['comparison_type'] = key  
+                                        rh_summary['year_group'] = str(sub_key)
+                                        rh_summary['subgroup'] = None
+                                        yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
 
-                                    # Rename columns to indicate the sampling scheme for individual infections; will be used to confirm partner Rh groupings
-                                    new_columns = [
-                                        f"{sampling_column}-{col}" if 'rh' in col else col
-                                        for col in sample_rh.columns
-                                    ]
-                                    sample_rh.columns = new_columns
-                                    all_inf_rh.append(sample_rh)
+                                        # Rename columns to indicate the sampling scheme for individual infections; will be used to confirm partner Rh groupings
+                                        new_columns = [
+                                            f"{sampling_column}-{col}" if 'rh' in col else col
+                                            for col in sample_rh.columns
+                                        ]
+                                        sample_rh.columns = new_columns
+                                        all_inf_rh.append(sample_rh)
 
                                 summary_stats = summary_stats.merge(yearly_rh_df, on=['comparison_type', 'year_group', 'subgroup'], how='left')
 

@@ -347,8 +347,8 @@ def subset_randomly(infection_df,
         for pop_id, pop_n_samp in zip(populations, n_per_pop):
             pop_df = infection_df[infection_df['population'] == pop_id]
             
-            for year in sorted(infection_df['year'].unique()):
-                year_df = pop_df[pop_df['year'] == year]
+            for year in sorted(infection_df['group_year'].unique()):
+                year_df = pop_df[pop_df['group_year'] == year]
                 
                 if year_df.empty:
                     continue
@@ -675,12 +675,17 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
     if 'simulation_year' not in df.columns and 'year' in df.columns:
         df['simulation_year'] = df['year'].copy()    
     
+    
     try:
         # Step 1: Apply hard filters
         if verbose:
             print("\n=== Step 1: Apply hard filters ===")
         filter_params = process_config_filters(config)
         df_filtered = apply_emod_filters(df, **filter_params)
+
+        df_filtered['group_year'] = df_filtered['intervention_year'].copy() if 'intervention_year' in df_filtered.columns else df['simulation_year'].copy()
+        if config['subpopulation_comparisons'].get('add_monthly'):
+            df_filtered['group_month'] = df_filtered['intervention_month'].copy() if 'intervention_month' in df_filtered.columns else df['continuous_month'].copy()
         
         # Step 2: Calculate infection metrics
         if verbose:

@@ -263,10 +263,11 @@ if __name__ == "__main__":
     project_dir = "/mnt/data/malaria/synthetic_genomes/jessica_projects/FPG_ObsModelTesting"
     
     # Set the path for simulations from EMOD
-    file_list_path = os.path.join(project_dir, "6yr_itns_merged.csv")   
-    
+    #file_list_path = os.path.join(project_dir, "6yr_itns_merged.csv")   
+    file_list_path = os.path.join(project_dir, "test_mapping.csv")
+
     # Specify the directory for outputs
-    output_summary_dir = os.path.join(project_dir, "infectionFPGReport_defaultConfig")  
+    output_summary_dir = os.path.join(project_dir, "infectionFPGReport_sympomaticsOnly")  
     
     # Optional config path (use None for defaults)
     config_path = None  # or specify path to your config.json

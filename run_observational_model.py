@@ -19,7 +19,7 @@ def get_default_config():
     """Return the default observational model configuration."""
     observational_model_config = {
         'hard_filters': {
-            'symptomatics_only': False, 
+            'symptomatics_only': True, 
             'monogenomic_infections_only': False,
             'day_snapshot': False
         },
@@ -34,14 +34,14 @@ def get_default_config():
                     'monogenomic_proportion': False, # Set to False if sampling randomly 
                     'equal_monthly': False}
             },
-            # 'seasonal': {
-            #     'method': 'seasonal',
-            #     'n_samples_year': 20,
-            #     'replicates': 2,
-            #     'method_params': {
-            #         'season': 'full', # Options: full or peak; currently hardcoded to match Senegal's seasonality; update for other scenarios in unified_sampling.py
-            #     }
-            # },
+            'seasonal': {
+                'method': 'seasonal',
+                'n_samples_year': 100,
+                'replicates': 2,
+                'method_params': {
+                    'season': 'full', # Options: full or peak; currently hardcoded to match Senegal's seasonality; update for other scenarios in unified_sampling.py
+                }
+            },
             # 'age': { # Example of how to set-up a sampling scheme based on age, to mirror biased sampling such as school surveys and health facility comparisons. 
             #     'method': 'age',
             #     'n_samples_year': 15,
@@ -61,15 +61,16 @@ def get_default_config():
             'unique_genome_proportion': True # Will calculate both the proportion of unique genomes in the sampled infections to replicate phasing and from monogenomic samples with an effective COI of 1  only to match barcode limits.
         },
         'subpopulation_comparisons': { # Supported for yearly and seasonal temporal sampling schemes, not age-based sampling. 
-            'add_monthly': True,  # Whether to add monthly comparisons within each year
-            'populations': True,  # Defined by the population node in EMOD
+            'add_monthly': False,  # Whether to add monthly comparisons within each year
+            'populations': False,  # Defined by the population node in EMOD
             'polygenomic': True,  # Is polygenomic = 1, else monogenomic = 0
-            'symptomatic': True,  # Is symptomatic = 1, else asymptomatic = 0
-            'age_bins': True      # Default age bins: 0-5, 5-15, 15+
+            'symptomatic': False,  # Is symptomatic = 1, else asymptomatic = 0
+            'age_bins': False     # Default age bins: 0-5, 5-15, 15+
         }
     }
     
     return observational_model_config
+
 
 def load_matrix_safely(file_path, max_retries=3, use_local_copy=True):
     """
@@ -296,7 +297,7 @@ def run_observational_model(
             # print("Input file unavailable, creating sample data for testing...")
             print(f"Error: {infection_df_path} not found. Loading test data.")
         infection_df = pd.read_csv('test_data/test_fpg_infections.csv')   
-
+ 
 
     # Run sampling model
     sample_df = run_sampling_model(
@@ -346,9 +347,6 @@ def run_observational_model(
         )
 
     # Run metric calculations
-    sample_df['group_year'] = sample_df['intervention_year'].copy() if 'intervention_year' in sample_df.columns else sample_df['simulation_year'].copy()
-    if config['subpopulation_comparisons'].get('add_monthly', True):
-        sample_df['group_month'] = sample_df['intervention_month'].copy() if 'intervention_month' in sample_df.columns else sample_df['continuous_month'].copy() 
     all_summaries, all_infection_ibx, all_ibx_dist_dict = run_time_summaries(
         sample_df, 
         subpop_config=config['subpopulation_comparisons'],
@@ -363,7 +361,6 @@ def run_observational_model(
     all_summaries.to_csv(summary_output_filepath, index=False)
     sample_output_filepath = f'{output_path}/{sim_name}_FPG_SampledInfections.csv'
     # Merge in individual IBx results for sampled infections
-    print(all_infection_ibx)
     if not all_infection_ibx.empty:
         sample_df = sample_df.merge(all_infection_ibx, on='infIndex', how='left')
     sample_df.to_csv(sample_output_filepath, index=False)
