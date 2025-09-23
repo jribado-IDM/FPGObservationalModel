@@ -150,3 +150,16 @@ This section defines with genetic metrics will be calculated for each set as boo
   }
 ~~~    
 
+## Mapping file for VM parallelization
+
+Ideally, one would pull the sim_id and the correspondng output path using an analyzer that contains epidemiological information too (need to find in the Senegal MDA FPG repository). 
+
+In the the absence of the mapping file, one can look for the directories belonging to a COMPS simulation set by name to create a mapping file. The full paths returned for the genetic input files for the observational model can also be used to pull information on the same sims in the InsetChart if needing to create a corresponding epidemiological summary report for analyses.  
+
+~~~
+# Example pull of data
+EXPERIMENT_NAME="/mnt/calculon2/jsuresh/output/maka fpg 10k - 6yr - strong ITNs in_20250522_195001/"
+OUTPUT_FILE="experiment_mapping.csv"
+
+{ echo "output_name,input_dir"; find "$EXPERIMENT_NAME" -name "output" -type d | sed 's|.*/\([0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}\)/output$|\1,"\0"|'; } > "$OUTPUT_FILE"
+~~~
