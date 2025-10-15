@@ -34,11 +34,12 @@ def adjust_time_columns(df, intervention_start_month=None):
     if intervention_start_month is not None and intervention_start_month > 0:
         print(f"Intervention starts at continuous month {intervention_start_month}")
         df['intervention_month'] = df['continuous_month'] - intervention_start_month
+        df['intervention_year'] = df['intervention_month']  // 12
     
     return df
 
 
-def calculate_infection_metrics(df, intervention_start_month=None):
+def calculate_infection_metrics(df):
     """
     Calculate metrics for each infection before any sampling decisions.
     
@@ -58,8 +59,6 @@ def calculate_infection_metrics(df, intervention_start_month=None):
     print(f"Calculating infection metrics for {len(df)} infections...")
     
     df = df.copy()
-    if intervention_start_month is not None or intervention_start_month > 0:
-        df = adjust_time_columns(df, intervention_start_month=intervention_start_month)
     
     # Step 2: Parse genome_ids and calculate COI
     df["recursive_nids_parsed"] = df["recursive_nid"].apply(parse_list)
@@ -683,6 +682,10 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
         filter_params = process_config_filters(config)
         df_filtered = apply_emod_filters(df, **filter_params)
 
+        intervention_start_month = config.get('intervention_start_month', intervention_start_month)
+        if intervention_start_month is not None or intervention_start_month > 0:
+            df_filtered = adjust_time_columns(df_filtered, intervention_start_month=intervention_start_month)
+
         df_filtered['group_year'] = df_filtered['intervention_year'].copy() if 'intervention_year' in df_filtered.columns else df['simulation_year'].copy()
         if config['subpopulation_comparisons'].get('add_monthly'):
             df_filtered['group_month'] = df_filtered['intervention_month'].copy() if 'intervention_month' in df_filtered.columns else df['continuous_month'].copy()
@@ -690,7 +693,7 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
         # Step 2: Calculate infection metrics
         if verbose:
             print("\n=== Step 2: Calculate individual infection metrics ===")
-        df_metrics = calculate_infection_metrics(df_filtered.copy(), intervention_start_month=intervention_start_month)
+        df_metrics = calculate_infection_metrics(df_filtered.copy())
         
         # Step 3: Run sampling for each method
         if verbose:
