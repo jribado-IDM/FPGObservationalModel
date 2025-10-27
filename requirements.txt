@@ -26,8 +26,6 @@ openpyxl>=3.0.0
 click>=7.0
 tqdm>=4.60.0
 
-# Note: IDM tskit must be installed separately from the specific branch:
-# pip install git+https://github.com/InstituteforDiseaseModeling/tskit.git@idm-ibx-calculations
 --extra-index-url "https://packages.idmod.org/api/pypi/pypi-production/simple"
 tskit==0.3.6.dev3
 
