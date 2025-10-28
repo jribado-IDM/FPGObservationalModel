@@ -116,11 +116,13 @@ def comprehensive_group_summary(group):
     epoly_mask = group['effective_coi'] > 1
     epoly_count = epoly_mask.sum()
     epoly_prop = epoly_count / n
-    
+
+
+
     # Full COI statistics
-    effective_coi_stats = _comprehensive_stats(group['effective_coi'], 'effective_coi')
     true_coi_stats = _comprehensive_stats(group['true_coi'], 'true_coi')
-    
+    effective_coi_stats = _comprehensive_stats(group['effective_coi'], 'effective_coi')
+
     # Genome ID analysis
     all_genome_stats = _analyze_genome_ids(group['recursive_nids_parsed'])
     mono_genome_stats = _analyze_genome_ids(group[group['effective_coi'] == 1]['recursive_nids_parsed'])
@@ -134,7 +136,7 @@ def comprehensive_group_summary(group):
         'true_poly_coi_count': poly_count,
         'true_poly_coi_prop': round(poly_prop, 3),
         'effective_poly_coi_count': epoly_count, 
-        'effective_poly_coi_prop': round(epoly_prop, 3),   
+        'effective_poly_coi_prop': round(epoly_prop, 3),
         'all_genomes_total_count': all_genome_stats['total'],
         'all_genomes_unique_count': all_genome_stats['unique'],
         'all_genomes_unique_prop': round(all_genome_stats['unique_prop'], 3),
@@ -144,10 +146,25 @@ def comprehensive_group_summary(group):
         'cotransmission_count': cotrans_stats['count'],
         'cotransmission_prop': round(cotrans_stats['prop'], 3),
     })
-    
-    # Add the comprehensive stats
+
     result = pd.concat([result, effective_coi_stats, true_coi_stats])
+    
+    if 'genotype_coi' in group.columns:
+        vpoly_mask = group['genotype_coi'] > 1
+        vpoly_count = vpoly_mask.sum()
+        vpoly_prop = vpoly_count / n
+
+        result.update({
+            'variant_poly_coi_count': vpoly_count,
+            'variant_poly_coi_prop': round(vpoly_prop, 3),
+        })
+
+        variant_coi_stats = _comprehensive_stats(group['genotype_coi'], 'genotype_coi')
+
+        result = pd.concat([result, effective_coi_stats, variant_coi_stats, true_coi_stats])
+
     return result
+
 
 def _comprehensive_stats(series, prefix):
     """Calculate comprehensive statistics with given prefix."""
@@ -194,8 +211,12 @@ def _empty_comprehensive_summary():
     """Return comprehensive summary with NaN/0 values for empty groups."""
     base_stats = {
         'n_infections': 0,
-        'poly_coi_count': 0,
-        'poly_coi_prop': np.nan,
+        'true_poly_coi_count': 0,
+        'true_poly_coi_prop': np.nan,
+        'effective_poly_coi_count': 0,
+        'effective_poly_coi_prop': np.nan,
+        'variant_poly_coi_count': 0,
+        'variant_poly_coi_prop': np.nan,
         'all_genome_total_count': 0,
         'all_genome_unique_count': 0,
         'all_genome_unique_prop': np.nan,
@@ -204,8 +225,6 @@ def _empty_comprehensive_summary():
         'mono_genome_unique_prop': np.nan,
         'cotransmission_count': 0,
         'cotransmission_prop': np.nan,
-        'superinfection_count': 0,
-        'superinfection_prop': np.nan
     }
     
     # Add comprehensive stats for both COI measures
@@ -666,6 +685,24 @@ save_ibx_distributions=True):
 #####################################################################################
 # Heterozygosity calculations
 #####################################################################################
+def get_variant_coi(matrix, indices):
+    """Checks for unique genotype within an infection from the variant panel.
+
+    TODO: Add option to account for densities to potentially mask polygenomic samples due to low density.
+    """
+    if len(indices) == 0:
+        return []
+        
+    try:
+        subset_matrix = matrix[indices, :]
+        unique_rows = np.unique(subset_matrix, axis=0)
+        return unique_rows.shape[0]
+
+    except Exception as e:
+        print(f"Error in generate_het_barcode: {e}")
+        return []    
+
+
 def generate_het_barcode(matrix, indices):
     """Checks for unique alleles at each locus for a specified set of genotypes identified by indices.
     If all alleles are the same at a locus, returns '0' or '1' for that locus.
@@ -698,6 +735,63 @@ def generate_het_barcode(matrix, indices):
         print(f"Error in generate_het_barcode: {e}")
         return []
 
+
+# In progress - alignment to allele frequency calculations without phased genotypes from real data
+def get_heterozygous_af(df, column_name = barcode_with_ns):
+    """
+    Convert a column of lists into a matrix and perform calculations.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        Your dataframe
+    column_name : str
+        Name of the column containing lists
+    
+    Returns:
+    --------
+    results : list
+        List of calculated proportions for each position
+    """
+    # Convert lists to matrix (each row becomes a row in the matrix)
+    matrix = np.array(df[column_name].tolist())
+    
+    # For each position in N, calculate: count of 1s / count of (0s + 1s)
+    # Ignore 'N' values or NaN
+    proportions = []
+    
+    for col_idx in range(matrix.shape[1]):
+        column_data = matrix[:, col_idx]
+        
+        # Filter out 'N' values and convert to numeric if needed
+        # Adjust this based on your actual data type
+        valid_values = []
+        for val in column_data:
+            if val != 'N' and val is not None and not (isinstance(val, float) and np.isnan(val)):
+                valid_values.append(val)
+        
+        valid_values = np.array(valid_values)
+        
+        # Count 1s and 0s
+        ones_count = np.sum(valid_values == 1)
+        zeros_and_ones_count = np.sum((valid_values == 0) | (valid_values == 1))
+        
+        # Calculate proportion
+        if zeros_and_ones_count > 0:
+            proportion = ones_count / zeros_and_ones_count
+        else:
+            proportion = np.nan
+        
+        proportions.append(proportion)
+        
+    return proportions
+
+# Example usage:
+# df = pd.DataFrame({
+#     'data': [[1, 0, 1, 'N', 1], [0, 1, 1, 0, 'N'], [1, 1, 0, 1, 1]]
+# })
+# 
+# barcode_af = get_heterozygous_af(df, 'data')
 
 #####################################################################################
 # Matching partner summary statistics
