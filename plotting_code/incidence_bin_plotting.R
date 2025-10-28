@@ -67,8 +67,8 @@ PlotBestFit <- function(df, y, x = "reported_incidence_per_1k",
   
   predict_df <- df %>%
     mutate(
-      .x = .data[[x]],
-      .y = .data[[y]]
+      .x = as.numeric(.data[[x]]),
+      .y = as.numeric(.data[[y]])
     )
   
   # fit candidate models
@@ -80,7 +80,7 @@ PlotBestFit <- function(df, y, x = "reported_incidence_per_1k",
   # RMSE helper (use predict_df)
   rmse <- function(mod) {
     pred <- predict(mod, newdata = predict_df)
-    sqrt(mean((pred - predict_df$.y)^2, na.rm = TRUE))
+    sqrt(mean((pred - as.numeric(predict_df$.y))^2, na.rm = TRUE))
   }
   
   stats <- tibble::tibble(
@@ -123,8 +123,10 @@ PlotBestFit <- function(df, y, x = "reported_incidence_per_1k",
                     se      = 0.68, alpha=0.2)
       }
     } +
-    scale_color_manual(values=sampling_scheme_colors) +
-    scale_fill_manual(values=sampling_scheme_colors) +
+    #scale_color_manual(values=sampling_scheme_colors) +
+    #scale_fill_manual(values=sampling_scheme_colors) +
+    #scale_color_manual(values=sampling_colors_2) +
+    #scale_fill_manual(values=sampling_colors_2) +
     {
       if(grepl("prop", y)){
         ylim(c(0,1))

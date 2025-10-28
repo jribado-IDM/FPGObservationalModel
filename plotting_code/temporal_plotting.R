@@ -25,6 +25,18 @@ sampling_scheme_colors <- setNames(
     "Both schemes combined")
 )
 
+sampling_colors_2 <- setNames(
+  c("#552000FF", "#8A4D00FF", "#C17D17FF", 
+    "#6699FFFF", "#003399FF",
+    "#FF6600FF", "#CC0000FF",
+    #"#6c1446"
+    "#d83397"),
+  gsub("Sample - ", "", c("All - Yearly", "Sample - Proportional", "Sample - Even", 
+    "Sample - Seasonal (Wet)", "Sample - Peak Seasonal (Wet)",  
+    "Sample - Seasonal (Dry)", "Sample - Peak Seasonal (Dry)",
+    "Both schemes combined"))
+)
+
 
 ################################################################################
 # Seasonal window objects
@@ -230,41 +242,44 @@ CombinedSamplingSchemeMeansPlot <- function(df){
 
 
 # Dot and whsiker plot of means for different temporal sampling schemes
-sampling_scheme_ord <- gsub(" - ", "\n", names(sampling_scheme_colors))
+#sampling_scheme_ord <- gsub(" - ", "\n", names(sampling_scheme_colors))
+sampling_scheme_ord <- names(sampling_colors_2)
 IndividualSamplingSchemeMeansPlot <- function(df,
                                               y_variable = "sampling_scheme",
                                               color_variable = "metric",
-                                              group_variable = "year"){
+                                              group_variable = "group_year"){
   
   df <- df %>%
     dplyr::mutate(sampling_scheme = factor(sampling_scheme, levels = rev(sampling_scheme_ord)),
                   metric = factor(metric, levels = names(metric_labels)))
 
-  
   vline.data <- df %>%
-    dplyr::filter(sampling_scheme == sampling_scheme_ord[grepl("Yearly", sampling_scheme_ord)] & year == -1)
+    dplyr::filter(sampling_scheme == sampling_scheme_ord[grepl("Proportional", sampling_scheme_ord)] & group_year == -1)
   
-  pd <- position_dodge2(width = 0.75, 
-                        preserve = "total",
-                        reverse  = TRUE)
+  #pd <- position_dodge2(width = 0.75, 
+  #                      preserve = "total",
+  #                      reverse  = TRUE)
+  dodge_width = 0.75
+  pd <- position_dodge(width = dodge_width)
+  
   p <- df %>%
     ggplot(aes(x = mean, 
                y=.data[[y_variable]], 
                color=.data[[color_variable]])) +
-    {
-      if (length(unique(df$year)) > 1) {
-        geom_vline(
-          data = vline.data,
-          aes(xintercept = mean, 
-              linetype = factor(.data[[group_variable]])),
-          colour     = "#666666",
-          size       = 0.25, 
-          show.legend = FALSE
-        )
-      } else {
-        NULL
-      }
-    } +
+    # {
+    #   if (length(unique(df$group_year)) > 1) {
+    #     geom_vline(
+    #       data = vline.data,
+    #       aes(xintercept = mean, 
+    #           linetype = factor(.data[[group_variable]])),
+    #       colour     = "#666666",
+    #       size       = 0.25, 
+    #       show.legend = FALSE
+    #     )
+    #   } else {
+    #     NULL
+    #   }
+    # } +
     geom_errorbarh(aes(xmin = mean - sd,
                        xmax = mean + sd,
                        group   = factor(.data[[group_variable]])),
@@ -288,24 +303,29 @@ IndividualSamplingSchemeMeansPlot <- function(df,
     #       breaks = seq(1,2,0.5))
     #   )
     # ) +
-    ggh4x::facetted_pos_scales(
-      x = list(
-        metric == "poly_coi_prop"          ~ scale_x_continuous(limits = c(0.1, 0.5), breaks = seq(0, 0.4, 0.2)),
-        metric == "genome_ids_unique_prop" ~ scale_x_continuous(limits = c(0.2, 1), breaks = seq(0.2, 1,0.2)),
-        metric == "cotransmission_prop"    ~ scale_x_continuous(limits= c(0.2, 0.8), breaks = seq(0.2,0.8,0.2)),
-        metric == "effective_coi_mean"     ~ scale_x_continuous(limits = c(1,2),
-                                                                breaks = seq(1,2,0.5),
-                                                                labels = scales::label_number(drop0trailing=TRUE))
-        )
-      ) +
+    # ggh4x::facetted_pos_scales(
+    #   x = list(
+    #     metric == "effective_poly_coi_prop"          ~ scale_x_continuous(limits = c(0.1, 0.5), breaks = seq(0, 0.4, 0.2)),
+    #     metric == "mono_genomes_unique_prop" ~ scale_x_continuous(limits = c(0.2, 1), breaks = seq(0.2, 1,0.2)),
+    #     metric == "cotransmission_prop"    ~ scale_x_continuous(limits= c(0.2, 0.8), breaks = seq(0.2,0.8,0.2)),
+    #     metric == "rh_poly_inferred_mean" ~ scale_x_continuous(limits= c(-0.5, 0.5), breaks = seq(-0.5,0.5,0.5)),
+    #     metric == "effective_coi_mean"     ~ scale_x_continuous(limits = c(1,2),
+    #                                                             breaks = seq(1,2,0.5),
+    #                                                             labels = scales::label_number(drop0trailing=TRUE))
+    #     )
+    #   ) +
     {
       if (color_variable == "metric") {
         list(scale_color_manual(values = metric_colors),
              guides(color=FALSE),
              theme(legend.position = "top"))
+      } else if (color_variable == "sampling_scheme") {
+        list(scale_color_manual(values = sampling_colors_2),
+             guides(color=FALSE),
+             theme(legend.position = "top"))
       } else {
         NULL
-      }
+      } 
     } +
     scale_shape_manual(values=year_shapes) +
     labs(x="Mean -/+ 1 SD",
@@ -319,3 +339,160 @@ IndividualSamplingSchemeMeansPlot <- function(df,
   return(p)
 }
 
+
+IndividualSamplingSchemeMeansPlot <- function(df,
+                                              y_variable = "sampling_scheme",
+                                              color_variable = "metric",
+                                              group_variable = "group_year"){
+  
+  df <- df %>%
+    dplyr::mutate(metric = factor(metric, levels = names(metric_labels)),
+                  group_year = factor(group_year, levels = rev(sort(unique(group_year))))
+                  )
+  # Reverse the factor levels of the color variable
+  if(color_variable == "sampling_scheme") {
+    df <- df %>%
+      mutate(sampling_scheme = factor(sampling_scheme, levels = rev(sampling_scheme_ord)))  # Not reversed
+  } 
+  
+  # Reverse the factor levels of the color variable
+  if(color_variable == "sampling_scheme") {
+    df <- df %>%
+      mutate(sampling_scheme = factor(sampling_scheme, levels = rev(sampling_scheme_ord)))  # Not reversed
+  } 
+  
+  vline.data <- df %>%
+    dplyr::filter(sampling_scheme == sampling_scheme_ord[grepl("Proportional", sampling_scheme_ord)] & group_year == -1)
+  
+  # Determine dodge width and which variable to use for position
+  if(y_variable == "group_year") {
+    dodge_width <- 0.7
+    position_var <- "sampling_scheme"
+  } else {
+    dodge_width <- 0.7
+    position_var <- "group_year"
+  }
+  
+  pd <- position_dodge(width = dodge_width)
+  
+  p <- df %>%
+    ggplot(aes(x = mean, 
+               y = factor(.data[[y_variable]]))) +
+    geom_errorbarh(aes(xmin = mean - sd,
+                       xmax = mean + sd,
+                       color = factor(.data[[color_variable]]),
+                       group = .data[[position_var]]),
+                   height = 0.4, 
+                   position = pd,
+                   linewidth = 0.6) +
+    geom_point(aes(shape = factor(.data[[group_variable]]),
+                   color = factor(.data[[color_variable]]),
+                   group = .data[[position_var]]),
+               size = 3,
+               position = pd,
+               fill = "white",
+               stroke = 1.5) +
+    facet_grid(.~metric,                            
+               labeller = as_labeller(metric_labels), 
+               scales = "free_x") +
+    {
+      if (color_variable == "metric") {
+        list(scale_color_manual(values = metric_colors),
+             scale_shape_manual(values = year_shapes),
+             guides(color = "none", shape = guide_legend(reverse = TRUE)))
+      } else if (color_variable == "sampling_scheme") {
+        list(scale_color_manual(values = rev(sampling_colors_2)),  # Reversed colors
+             guides(shape="none", color = guide_legend(reverse = TRUE)),
+             labs(color = "Sampling scheme"))
+      } else if (color_variable == "group_year") {
+        list(scale_color_manual(values = rev(year_colors)),  # Reversed colors
+             labs(color = "Year"))
+      } else {
+        NULL
+      } 
+    } +
+    labs(x = "Mean -/+ 1 SD",
+         y = "",
+         shape = ifelse(group_variable == "group_year", "Year", "Sampling scheme")) +
+    theme(panel.spacing.x = unit(0.5, "cm"),
+          legend.position = "top")
+  
+  return(p)
+}
+
+
+
+
+TimeSeriesMetricsPlot <- function(df,
+                                  color_variable = "sampling_scheme",
+                                  plot_type = "absolute",  # "absolute" or "change"
+                                  facet_by = "metric",
+                                  add_ribbon = TRUE) {
+  
+  # If plotting changes, calculate them first
+  if(plot_type == "change") {
+    df <- df %>%
+      arrange(sampling_scheme, metric, group_year) %>%
+      group_by(sampling_scheme, metric) %>%
+      mutate(
+        mean_original = mean,
+        mean = mean - lag(mean),
+        sd = sqrt(sd^2 + lag(sd)^2),  # Propagate uncertainty
+        group_year_from = lag(group_year),
+        group_year_to = group_year
+      ) %>%
+      filter(!is.na(mean)) %>%  # Remove first row of each group
+      ungroup()
+  }
+  
+  df <- df %>%
+    dplyr::mutate(
+      sampling_scheme = factor(sampling_scheme, levels = sampling_scheme_ord),
+      metric = factor(metric, levels = names(metric_labels))
+    )
+  
+  p <- df %>%
+    ggplot(aes(x = group_year, y = mean, 
+               color = .data[[color_variable]], 
+               group = .data[[color_variable]])) +
+    # Add reference line
+    {
+      if(plot_type == "change") {
+        geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", linewidth = 0.5)
+      } else {
+        NULL
+      }
+    } +
+    # Add ribbon for uncertainty
+    {
+      if(add_ribbon) {
+        geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd, 
+                        fill = .data[[color_variable]]),
+                    alpha = 0.2, color = NA)
+      } else {
+        NULL
+      }
+    } +
+    geom_vline(xintercept = 0, linewidth=1.5) +
+    geom_line(linewidth = 1) +
+    geom_point(size = 2.5) +
+    facet_wrap(as.formula(paste0("~", facet_by)), 
+               scales = "free_y",
+               labeller = as_labeller(metric_labels)) +
+    scale_color_manual(values = sampling_colors_2) +
+    scale_fill_manual(values = sampling_colors_2) +
+    xlim(-1,2)+
+    labs(
+      x = "Year",
+      y = ifelse(plot_type == "change", "Change in metric", "Metric value"),
+      color = "Sampling scheme",
+      fill = "Sampling scheme"
+    ) +
+    theme(
+      legend.position = "top",
+      panel.spacing = unit(0.5, "cm")
+      #strip.text = element_text(size = 10, face = "bold")
+    )
+  
+  return(p)
+}

@@ -9,7 +9,7 @@
 ################################################################################
 # load libraries
 needed_packages <- c('data.table', 'dplyr', 'tidyr', 'purrr',
-  'ggplot2','ggpubr', 'ggh4x', 'gtools', 'rstatix')
+                     'ggplot2','ggpubr', 'ggh4x', 'gtools', 'ggtext', 'rstatix')
 for(p in needed_packages){
   if(!p %in% installed.packages()[,1]){
     install.packages(p)
@@ -25,9 +25,9 @@ source("incidence_bin_plotting.R")
 
 
 # Set directories
-dir <- '/mnt/data/malaria/synthetic_genomes/jessica_projects/2504_GRSweep'
-summary_dir <- paste(dir, "infectionFPGReport_summaries_6yr_higherBiting", sep="/")
-plot_dir <- paste(dir, "plot_newITNs_6yr_timeShift_higherBiting", sep="/")
+dir <- '/mnt/data/malaria/synthetic_genomes/jessica_projects/FPG_ObsModelTesting'
+summary_dir <- paste(dir, "infectionFPGReport_sympomaticsOnly_timeCheck", sep="/")
+plot_dir <- paste(dir, "plot_testFPG_symptomaticsOnly", sep="/")
 if (!dir.exists(plot_dir)){ dir.create(plot_dir, recursive = TRUE) }
 
 # create mapping file to run with observational_extracted.py to give matched sim_id names
@@ -57,31 +57,41 @@ theme_set(theme_bw()+
             theme(
               panel.background = element_rect(fill='transparent'), #transparent panel bg
               plot.background = element_rect(fill='transparent', color=NA), #transparent plot bg
-              #panel.grid.major = element_blank(), #remove major gridlines
+              panel.grid.major = element_blank(), #remove major gridlines
               panel.grid.minor = element_blank(), #remove minor gridlines
               legend.background = element_rect(fill='transparent', colour = NA), #transparent legend bg
               legend.box.background = element_rect(fill='transparent', colour = NA),
               legend.key = element_rect(fill=NA, colour = NA) #transparent legend panel
             ))
 
+
 metric_labels <- c(
-  poly_coi_prop          = "Polygenomic\nproportion",
-  genome_ids_unique_prop = "Unique genome\nproportion",
+  true_poly_coi_prop     = "True polygenomic\nproportion",
+  effective_poly_coi_prop = "Polygenomic\nproportion",
+  variant_poly_coi_prop = "Polygenomic\nproportion",
+  all_genomes_unique_prop = "All unique genome\nproportion",
+  mono_genomes_unique_prop = "Unique genome\nproportion",
   cotransmission_prop    = "Cotransmission\nproportion",
-  superinfection_prop    = "Superinfections\nproportion", 
   effective_coi_mean    = "Mean complexity\nof infection",
-  true_coi_mean         = "Mean true complexity of infection"
+  true_coi_mean         = "Mean true complexity of infection",
+  rh_poly_inferred_mean = "Mean RH",
+  ibs_mean = "Mean identity by state",
+  ibd_mean = "Mean identity by descent"
 )
 
 metric_colors <- c(
-  poly_coi_prop          = "#81A88DFF",
-  genome_ids_unique_prop = "#02401BFF",
+  true_poly_coi_prop        = "mediumpurple4",
+  effective_poly_coi_prop = "mediumpurple1",
+  variant_poly_coi_prop   = "#7C4B73FF",
+  all_genomes_unique_prop  = "#81A88DFF",
+  mono_genomes_unique_prop = "#02401BFF",
   cotransmission_prop    = "#D8B70AFF",
-  superinfection_prop    = "#FDD262FF", 
   effective_coi_mean     = "#972D15FF",
-  true_coi_mean          = "#E68E54FF"
+  true_coi_mean          = "#E68E54FF",
+  rh_poly_inferred_mean = "#06A2BCFF",
+  ibs_mean = "#5A97C1FF", 
+  ibd_mean = "#0A2E57FF"
 )
-
 
 
 ################################################################################
@@ -108,7 +118,7 @@ Monthly2Yearly <- function(df){
 
 
 TimeScaleSummaryStats <- function(df = year_summaries, 
-                                  time_scale = "year",
+                                  time_scale = "group_year",
                                   bin = "start_who_bin") {
   
   multi_sim_year_summary <- df %>%
@@ -118,8 +128,8 @@ TimeScaleSummaryStats <- function(df = year_summaries,
       across(
         all_of(y_vars),
         .fns = list(
-          mean   = ~mean(.x,   na.rm = TRUE),
-          median = ~median(.x, na.rm = TRUE),
+          mean   = ~mean(as.numeric(.x),   na.rm = TRUE),
+          median = ~median(as.numeric(.x), na.rm = TRUE),
           sd     = ~sd(.x,     na.rm = TRUE)
         ),
         .names = "{.col}_{.fn}"
@@ -137,31 +147,45 @@ TimeScaleSummaryStats <- function(df = year_summaries,
   
   return(multisim_summary_long)    
 }
- 
+
 ################################################################################
 # load data
 ################################################################################
-senegal_data <- data.table::fread("/Users/jribado/Library/CloudStorage/OneDrive-Bill&MelindaGatesFoundation/Malaria/Data/senegal/combined_model_predictions_inc24_long.csv", sep=",") %>%
+
+################################################################################
+# Empirical data
+################################################################################
+senegal_data <- data.table::fread(paste(dir, "../2504_GRSweep/combined_model_predictions_inc24_long.csv", sep="/"), sep=",") %>%
   dplyr::mutate(sampling_scheme = "Senegal data")
 
-sim_epi_monthly <- data.table::fread(paste(dir, "sim_data_epi_monthly_new_itns_6yr_very_high_biting.csv", sep="/")) %>%
-  dplyr::mutate(continuous_month = ifelse(year == 0, month, (year*12) + month))
+################################################################################
+# Simulation epi data (provided by analyzer not yet defined)
+################################################################################
+sim_epi_yearly_path <- ""
+sim_epi_monthly_path <- paste(dir, "sim_data_monthly.csv", sep="/")
+
+sim_epi_monthly <- data.table::fread(sim_epi_monthly_path) %>%
+  dplyr::rename(simulation_year = year) %>%
+  dplyr::mutate(continuous_month = ifelse(simulation_year == 0, month - 1, (simulation_year*12) + month - 1),
+                group_year = simulation_year)
+
 if(isTRUE(shift_intervention_time)){
-  sim_epi_monthly <- dplyr::rename(sim_epi_monthly, sim_year = year) %>%
-    dplyr::mutate(year = (continuous_month - intervention_month_shift) %/% 12,
-                  intervention_month = continuous_month - intervention_month_shift)
+  sim_epi_monthly <- sim_epi_monthly %>% 
+    dplyr::mutate(intervention_year = (continuous_month - intervention_month_shift) %/% 12,
+                  intervention_month = continuous_month - intervention_month_shift,
+                  group_year = intervention_year)
   
-  emod_columns <- setdiff(names(sim_epi_monthly), c("sim_year", "month", "continuous_month", "intervention_month", metrics))
+  emod_columns <- setdiff(names(sim_epi_monthly), c("simulation_year", "month", "continuous_month", "intervention_month", metrics))
   sim_epi_yearly <- sim_epi_monthly %>%
     dplyr::group_by(across(all_of(c(emod_columns)))) %>%
     dplyr::summarise(
       reported_incidence_per_1k = sum(reported_incidence_per_1k),
       true_incidence_per_1k = sum(true_incidence_per_1k),
       eir = mean(eir),
-      pfpr=mean(pfpr), .groups = 'drop'
+      pfpr = mean(pfpr), .groups = 'drop'
     )
 } else{
-  sim_epi_yearly  <- data.table::fread(paste(dir, "sim_data_epi_new_itns_6yr.csv", sep="/")) 
+  sim_epi_yearly  <- data.table::fread(sim_epi_yearly_path) 
   if("month" %in% names(sim_epi_yearly)) {sim_epi_yearly <- Monthly2Yearly(sim_epi_monthly)}
 }
 
@@ -176,25 +200,50 @@ sim_epi_yearly <- sim_epi_yearly %>%
                 ),
                 year_who_bin = factor(year_who_bin, levels = c("Very low", "Low", "Moderate", "High")))
 sim_epi_yearly$year_incidence_bin <- cut(sim_epi_yearly$reported_incidence_per_1k, 
-   seq(plyr::round_any(min(sim_epi_yearly$reported_incidence_per_1k), 50, f=floor), 
-       plyr::round_any(max(sim_epi_yearly$reported_incidence_per_1k), 50, f=ceiling), 50),
-   include.lowest = TRUE)
-sim_start_bins <- dplyr::filter(sim_epi_yearly, year==-1) %>% select(sim_id, year_who_bin) %>% unique() %>% rename(start_who_bin=year_who_bin)
+                                         seq(plyr::round_any(min(sim_epi_yearly$reported_incidence_per_1k), 50, f=floor), 
+                                             plyr::round_any(max(sim_epi_yearly$reported_incidence_per_1k), 50, f=ceiling), 50),
+                                         include.lowest = TRUE)
+sim_start_bins <- dplyr::filter(sim_epi_yearly, group_year==-1) %>% select(sim_id, year_who_bin) %>% unique() %>% rename(start_who_bin=year_who_bin)
 
 sim_epi_yearly <- left_join(sim_epi_yearly, sim_start_bins)
 sim_epi_monthly <- inner_join(sim_epi_monthly, sim_start_bins)
-  
-genetic_summary_files <- list.files(path = summary_dir, pattern = ".*_summary.csv")
-genetic_stats_all <- dplyr::bind_rows(
-  lapply(setNames(genetic_summary_files, genetic_summary_files), function(i) data.table::fread(paste(summary_dir, i, sep="/"))),
-         .id = "sim_id") %>%
-    dplyr::mutate(sim_id = gsub("_summary.csv", "", sim_id))
 
-year_summaries <- dplyr::filter(genetic_stats_all, !is.na(year) & is.na(continuous_month))
-season_summary <- dplyr::filter(genetic_stats_all, grepl("Wet|Dry", season)) %>%
-  dplyr::mutate(year = as.numeric(sub(".*:\\s*(-?\\d+)-.*", "\\1", season)),
-                season = stringr::str_extract(season, "^\\w+"),
-                sampling_scheme = paste0(sampling_scheme, " (", season, ")"))
+
+################################################################################
+# Simulatation genetic data
+################################################################################
+genetic_summary_files <- list.files(path = summary_dir, pattern = ".*_FPG_ModelSummaries.csv", recursive = T)
+
+# Option 1: Force consistent column types during reading
+genetic_stats_all <- dplyr::bind_rows(
+  lapply(setNames(genetic_summary_files, genetic_summary_files), function(i) {
+    df <- data.table::fread(paste(summary_dir, i, sep="/"))
+    
+    # Convert ALL columns to character first to eliminate type conflicts
+    df[] <- lapply(df, as.character)
+    
+    return(df)
+  }),
+  .id = "sim_id"
+) %>%
+  dplyr::mutate(sim_id = gsub(".*\\/|_FPG_ModelSummaries.csv", "", sim_id))
+
+
+year_summaries <- dplyr::filter(genetic_stats_all, comparison_type == "group_year" ) %>%
+  dplyr::mutate(sampling_scheme = "Sample - Proportional",
+                year_group = as.numeric(year_group)) %>%
+  dplyr::rename("group_year" = "year_group")
+season_summary <- dplyr::filter(genetic_stats_all, comparison_type == "season_bins") %>%
+  dplyr::mutate(simulation_year = as.numeric(sub(".*:\\s*(-?\\d+)-.*", "\\1", year_group)),
+                season = stringr::str_extract(year_group, "^\\w+"),
+                # sampling_scheme = paste0(gsub(".*seasonal|_[0-9].*", "", sampling_scheme), " season (", season, ")")) %>%
+                sampling_scheme = paste0("Sample - Seasonal (", season, ")")) %>%
+  dplyr::mutate(group_year = case_when(
+                  season == "Wet" ~ simulation_year - 2,
+                  season == "Dry" & simulation_year == 1 ~ -1,
+                  season == "Dry" & simulation_year > 2  ~ simulation_year - 3,
+                  .default = NA_real_
+                ))
 # peak_summary <- dplyr::filter(genetic_stats_all, grepl("Wet|Dry", peak_season)) %>%
 #   dplyr::mutate(year = as.numeric(sub(".*:\\s*(-?\\d+)-.*", "\\1", peak_season)),
 #                 season = stringr::str_extract(peak_season, "^\\w+"),
@@ -202,8 +251,8 @@ season_summary <- dplyr::filter(genetic_stats_all, grepl("Wet|Dry", season)) %>%
 year_summaries <- dplyr::bind_rows(year_summaries, 
                                    season_summary, 
                                    #peak_summary
-                                   ) %>%
-  dplyr::inner_join(., sim_epi_yearly) %>%
+) 
+year_summaries <-  dplyr::inner_join(year_summaries, sim_epi_yearly) %>%
   dplyr::mutate(sampling_scheme = factor(sampling_scheme, levels = names(sampling_scheme_colors)))
 
 
@@ -211,28 +260,31 @@ month_summaries <- dplyr::filter(genetic_stats_all, !is.na(continuous_month)) %>
   dplyr::select(-year, -season) %>%
   #dplyr::select(-year, -intervention_month, -month) %>%
   dplyr::inner_join(., sim_epi_monthly) %>%
-  dplyr::mutate(season_group = case_when(
-    between(month, 10, 12) ~ "Peak wet season",
-    between(month, 3, 6) ~ "Peak dry season",
-    TRUE ~ "Other"),
+  dplyr::mutate(
+    peak_group = case_when(
+      between(month, 10, 12) ~ "Peak wet season",
+      between(month, 3, 6) ~ "Peak dry season",
+      TRUE ~ "Other"),
     intervention_month = continuous_month - intervention_month_shift,
     year = intervention_month %/% 12
   ) 
 month_summaries <- dplyr::inner_join(month_summaries, 
-                                    select(sim_epi_yearly, sim_id, year, reported_incidence_per_1k, year_who_bin) %>% 
-                      rename("year_incidence" = "reported_incidence_per_1k"))
+                                     select(sim_epi_yearly, sim_id, year, reported_incidence_per_1k, year_who_bin) %>% 
+                                       rename("year_incidence" = "reported_incidence_per_1k"))
 max_infections <- max(month_summaries$genome_ids_total_count)
 max_incidence <- max(month_summaries$reported_incidence_per_1k)
 
 # set some time limits
-time_vector <- sort(unique(month_summaries[[month_start]]))
-shifted_full_years <- time_vector[time_vector%%12 == 0]
-shifted_full_years <- shifted_full_years[shifted_full_years > -13]
+#time_vector <- sort(unique(month[[month_start]]))
+#shifted_full_years <- time_vector[time_vector%%12 == 0]
+shifted_full_years=unique(year_summaries$group_year)
+#shifted_full_years <- shifted_full_years[shifted_full_years > -13]
+shifted_full_years <- shifted_full_years[shifted_full_years > -2]
 highlight_subset <- dplyr::filter(highlight_periods, xmin > min(shifted_full_years) & xmin < max(shifted_full_years)) %>%
   dplyr::mutate(xmax = ifelse(xmax > max(shifted_full_years), max(shifted_full_years), xmax))
 
-sampling_subset <- names(sampling_scheme_colors)[c(1,4,6)]
-year_summaries <- dplyr::filter(year_summaries, between(year, -1, 2) & sampling_scheme %in% sampling_subset)
+sampling_subset <- names(sampling_scheme_colors)[c(2,4,6)]
+year_summaries <- dplyr::filter(year_summaries, between(group_year, -1, 2) & sampling_scheme %in% sampling_subset)
 month_summaries <- month_summaries %>% dplyr::filter(.[[month_start]] >= min(shifted_full_years) & .[[month_start]] <= max(shifted_full_years)-1)
 
 #write.table(month_summaries, paste(dir, "geneticMetrics_Monthly_itns_6yr_PeakDaysFilter.csv", sep="/"), 
@@ -243,13 +295,14 @@ month_summaries <- month_summaries %>% dplyr::filter(.[[month_start]] >= min(shi
 
 ################################################################################
 # Set variables for included summary statistics
-y_vars <- c(names(genetic_stats_all)[grepl("prop|coi_mean", names(genetic_stats_all))])
+y_vars <- c(names(genetic_stats_all)[grepl("prop|_mean", names(genetic_stats_all))])
 y_labs <- gsub("\n" ," ", metric_labels)
-y_names <- setNames(y_vars, c("Poly", "TrueCOI", "EffCOI", "Unique", "Cotransmission", "Superinfection"))  
+y_names <- setNames(y_vars, c("AllPoly", "EffPoly", "AllUnique", "MonoUnique", 
+                              "Cotx", "EffCOI", "TrueCOI", "RH", "IBS"))  
 
 # Subset genetic metrics of interest
-y_vars <- y_vars[!y_vars %in% c("true_coi_mean", "superinfection_prop")] 
-y_vars <- c("poly_coi_prop", "genome_ids_unique_prop", "cotransmission_prop", "effective_coi_mean")
+# y_vars <- y_vars[!y_vars %in% c("true_coi_mean", "superinfection_prop")] 
+y_vars <- c("effective_poly_coi_prop", "mono_genomes_unique_prop", "cotransmission_prop", "rh_poly_inferred_mean", "effective_coi_mean")
 
 
 ################################################################################
@@ -309,6 +362,10 @@ ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_SenegalMetrics.png"),
 # Yearly plots
 ################################################################################
 # Best fit line for all years in the simulation
+year_summaries <- year_summaries %>% dplyr::mutate(
+  sampling_scheme = gsub("Sample - ", "", sampling_scheme), 
+  sampling_scheme = factor(sampling_scheme, levels = names(sampling_colors_2)))
+
 all_year_trends <- lapply(y_vars, function(i, x_scale = "log"){ 
   #p <- ProportionBasePlot(year_summaries, y_var = i, summarize_trend = TRUE) +
   p <- PlotBestFit(year_summaries, y = i) 
@@ -350,24 +407,33 @@ all_year_trends <- lapply(y_vars, function(i, x_scale = "log"){
 #          width = 8, height = 5, units = c("in"), dpi = 300)
 #   return(p)
 # })
- 
+
 
 ########
 # Best fit plots for transmission ranges 
 senegal_labels <- c(
-  poly_coi_prop          = "Polygenomic proportion",
-  genome_ids_unique_prop = "Unique genome proportion*",
+  effective_poly_coi_prop  = "Polygenomic proportion",
+  mono_genomes_unique_prop = "Unique genome proportion*",
   cotransmission_prop    = "Co-transmission proportion",
-  superinfection_prop    = "Superinfections\nproportion", 
+  rh_poly_inferred_mean = "RH",
   effective_coi_mean    = "Mean COI",
   true_coi_mean         = "Mean COI"
 )
 
 
-for(model_year in unique(year_summaries$year)){
+for(model_year in c(unique(year_summaries$group_year), "All")){
   
   metric_plots_single <- lapply(y_vars, function(j, x_scale = "log", add_senegal_points=TRUE){
-    tmp_df <- dplyr::filter(year_summaries, year==model_year)
+    if(model_year == "All"){
+      tmp_df <- year_summaries
+    } else{
+      tmp_df <- dplyr::filter(year_summaries, group_year==model_year)
+    }
+    
+    tmp_df <- tmp_df %>%
+      dplyr::mutate(
+        sampling_scheme = gsub("Sample - ", "", sampling_scheme), 
+        sampling_scheme = factor(sampling_scheme, levels = names(sampling_colors_2))) 
     regression_run <- PlotBestFit(tmp_df, y = j)
     
     p <- regression_run$plot +
@@ -376,7 +442,7 @@ for(model_year in unique(year_summaries$year)){
           geom_point(data = dplyr::filter(senegal_data, 
                                           between(Incidence, min(tmp_df$reported_incidence_per_1k),
                                                   max(tmp_df$reported_incidence_per_1k)) &
-                                          Metric == senegal_labels[names(senegal_labels) == j]), 
+                                            Metric == senegal_labels[names(senegal_labels) == j]), 
                      aes(x=Incidence, y=Value), 
                      inherit.aes = FALSE,            # drop the original color/group mapping
                      color       = "black",          # or pick a new color aesthetic
@@ -396,7 +462,7 @@ for(model_year in unique(year_summaries$year)){
         axis.title.y=element_blank()) + 
       {
         if(x_scale == "log"){
-          scale_x_log10() 
+          scale_x_continuous(breaks = c(100, 250, 450), transform = "log10") 
         }    
       } 
     
@@ -407,15 +473,17 @@ for(model_year in unique(year_summaries$year)){
     plotlist=list(metric_plots_single[1][[1]], 
                   metric_plots_single[2][[1]],
                   metric_plots_single[3][[1]],
-                  metric_plots_single[4][[1]]),
-    ncol=2, nrow=2, align="hv", common.legend = T, legend = "top")
+                  metric_plots_single[4][[1]],
+                  metric_plots_single[5][[1]]
+    ),
+    ncol=3, nrow=2, align="hv", common.legend = T, legend = "top")
   p <- annotate_figure(p,
                        bottom = text_grob("Yearly mean reported incidence per 1k",
                                           size = 12))
   p
   ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_YearlyAllMetrics_AllSchemes_yr", model_year, "_logWithSamples.png"), 
          plot = p, path = plot_dir,
-         width = 7, height = 5, units = c("in"), dpi = 300)
+         width = 7.75, height = 5.5, units = c("in"), dpi = 300)
 }
 
 
@@ -461,7 +529,7 @@ for(model_year in unique(year_summaries$year)){
 #   
 #   return(p)
 # })
-  
+
 
 ###########
 # Scatter plot of monthly reported incidence and genetic metrics
@@ -484,7 +552,7 @@ for(model_year in unique(year_summaries$year)){
 #          width = 8, height = 5, units = c("in"), dpi = 300)
 #   return(p)
 # })
-  
+
 
 ###########
 # Line plot of changes in summary statistic on a monthly scale, with incidence to match
@@ -498,10 +566,24 @@ lapply(y_vars, function(i){
          fill = "Starting incidence\nbin") +
     geom_vline(xintercept=intervention_intercept, size=1.5)
   
+  month_prevlance_p <- MonthlyTrendsPlot(month_summaries, 
+                                         y_variable = "pfpr", 
+                                         bin="start_who_bin", 
+                                         sd_ribbons = FALSE) + 
+    labs(title = "PfPR",
+         color = "Starting incidence\nbin", 
+         fill = "Starting incidence\nbin") +
+    geom_vline(xintercept=intervention_intercept, size=1.5)
+  
   month_metric_p <- MonthlyTrendsPlot(month_summaries, y_variable = i, 
-                     bin="start_who_bin", sd_ribbons = FALSE) + 
-    labs(color="Starting incidence\nbin", fill = "Starting incidence\nbin") 
-  p <- ggpubr::ggarrange(month_incidence_p, month_metric_p, ncol=1, heights = c(1,2), 
+                                      bin="start_who_bin", sd_ribbons = FALSE) + 
+    labs(
+      title=y_labs[names(y_labs) == i],
+      color="Starting incidence\nbin", 
+      fill = "Starting incidence\nbin") 
+  p <- ggpubr::ggarrange(month_incidence_p, 
+                         month_prevlance_p,
+                         month_metric_p, ncol=1, heights = c(1,1.15,2), 
                          common.legend = T, legend="right")
   
   ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_MonthlyTimescaleWHOBins_", names(y_names)[y_names == i], "_allSims.png"), 
@@ -518,182 +600,295 @@ lapply(unique(month_summaries$start_who_bin), function(i, bin_group = "start_who
   p <- MonthlyCombinedMetrics(tmp_df) 
   ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_MonthlyAllMetrics_Stratus", gsub(" ", "", i), ".png"), 
          plot = p, path = plot_dir,
-         width = 7, height = 5, units = c("in"), dpi = 300)       
+         width = 7, height = 7, units = c("in"), dpi = 300)       
 })
 
 
 ##### Line plot of differences
-multisim_summary_long <- TimeScaleSummaryStats() %>%
-  dplyr::mutate(sampling_scheme = gsub(" - ", "\n", sampling_scheme))
+multisim_summary_long <- TimeScaleSummaryStats() 
 lapply(unique(multisim_summary_long$start_who_bin), function(i){
   tmp_df <- dplyr::filter(multisim_summary_long, 
-                start_who_bin == !!i #& 
-                #importation_rate == "high"
-                )
+                          start_who_bin == !!i #& 
+                          #importation_rate == "high"
+  ) #%>% dplyr::filter(metric != "effective_coi_mean")
+  #tmp_df$sampling_scheme <- gsub("Sample - ", "", tmp_df$sampling_scheme)
   if(nrow(tmp_df) > 1){
     p <- IndividualSamplingSchemeMeansPlot(tmp_df) + theme(panel.grid.major = element_blank())
     ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_SamplingSchemeVariation_Stratus", gsub(" ", "", i), "_AllYears.png"), 
            plot = p, path = plot_dir,
-           width = 5.5, height = 4, units = c("in"), dpi = 300) 
+           width = 6.5, height = 4, units = c("in"), dpi = 300) 
+    
+    p_season <- IndividualSamplingSchemeMeansPlot(tmp_df, color_variable = "sampling_scheme", y_variable = "group_year", group_variable = "sampling_scheme")
+    ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_SamplingSchemeVariation_Stratus", gsub(" ", "", i), "_ColorBySeason.png"), 
+           plot = p_season, path = plot_dir,
+           width = 6.5, height = 4, units = c("in"), dpi = 300) 
+    
+    yearly_change <-TimeSeriesMetricsPlot(dplyr::filter(multisim_summary_long, start_who_bin=="Low"), 
+                          color_variable = "sampling_scheme",
+                          plot_type = "change",
+                          add_ribbon = TRUE)
+    ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_SamplingSchemeVariation_Stratus", gsub(" ", "", i), "_LongitudinalDelta.png"), 
+           plot = yearly_change, path = plot_dir,
+           width = 6.5, height = 4, units = c("in"), dpi = 300) 
+    
+    yearly_abs <- TimeSeriesMetricsPlot(dplyr::filter(multisim_summary_long, start_who_bin=="Low"), 
+                          color_variable = "sampling_scheme",
+                          plot_type = "absolute",
+                          add_ribbon = TRUE)
+    ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_SamplingSchemeVariation_Stratus", gsub(" ", "", i), "_LongitudinalAbsolute.png"), 
+           plot = yearly_abs, path = plot_dir,
+           width = 6.5, height = 4, units = c("in"), dpi = 300)
+    
   }
 })
-  
+
 
 ################################################################################
 # Incidence plots 
 ################################################################################ 
-input_metric = y_vars[4]
-coi_inc_plots <- IncidenceCurveBuild(year_summaries, 
-                         metric = input_metric,
-                         y_lim = c(1, max(year_summaries[[input_metric]])), 
-                         center_lines = c(1.33, 1.75)
-                         )
+# input_metric = y_vars[4]
+# center_lines = c(1.4, 2.4)
+input_metric = y_vars[2]
+# center_lines = c(0.76, 0.90)
+center_lines = c(0.73, 0.90)
+input_incidence="reported_incidence_per_1k"
 
-lapply(names(coi_inc_plots), function(p){
-  ggsave(paste(format(Sys.time(), "%Y%m%d"), p, names(y_names)[y_names == input_metric], "YearsAll_log.png", sep="_"),
-         plot = coi_inc_plots[[p]],
+inc_plots <- IncidenceCurveBuild(year_summaries %>% dplyr::mutate(
+  sampling_scheme = gsub("Sample - ", "", sampling_scheme), 
+  sampling_scheme = factor(sampling_scheme, levels = names(sampling_colors_2))),
+  incidence = input_incidence,
+  metric = input_metric,
+  #y_lim = c(1, max(year_summaries[[input_metric]])), 
+  y_lim = c(0.3, 1),
+  center_lines = center_lines,#[1],
+  offset= 0.01
+)
+
+lapply(names(inc_plots), function(p){
+  ggsave(paste(format(Sys.time(), "%Y%m%d"), p, names(y_names)[y_names == input_metric], "YearsAllPrevalence_log.png", sep="_"),
+         plot = inc_plots[[p]],
          path = plot_dir,
          width = 5, height = 4, units = c("in"), dpi = 300)
 })
 
 
-center_line <- c(1.33)#, 1.5)
 points_df <- dplyr::bind_rows(lapply(center_lines, function(c){
-  count_df <- dplyr::filter(year_summaries, between(.data[[metric]], c - 0.01, c + 0.01)) %>%
+  count_df <- dplyr::filter(year_summaries, between(.data[[input_metric]], c - 0.01, c + 0.01)) %>%
     dplyr::mutate(center_point = c)
   return(count_df)
 }))
 
 sampling_inc_summary <- dplyr::bind_rows(
-  SummarizeByGroups(
-    data         = points_df,
-    group_cols   = c("center_point"),
-    metric_col   = incidence) %>% 
-    dplyr::mutate(sampling_scheme = "Both schemes combined"),
+  #SummarizeByGroups(
+  #  data         = points_df,
+  #  group_cols   = c("center_point"),
+  #  metric_col   = incidence) %>% 
+  #  dplyr::mutate(sampling_scheme = "Both schemes combined"),
   SummarizeByGroups(
     data         = points_df,
     group_cols   = c("center_point", "sampling_scheme"),
-    metric_col   = incidence)
-)
+    metric_col   = input_incidence)
+) %>%
+  dplyr::filter(sampling_scheme != "All - Yearly") %>% 
+  dplyr::mutate(
+    sampling_scheme = gsub("Sample - ", "", sampling_scheme), 
+    sampling_scheme = factor(sampling_scheme, levels = rev(names(sampling_colors_2))))
 
-j <- position_dodge2(width = 0.4, 
-                      preserve = "single",
-                      reverse  = TRUE)
-specific_points_p <- 
-  dplyr::filter(sampling_inc_summary, sampling_scheme != "All - Yearly") %>% 
-  dplyr::mutate(sampling_scheme = factor(sampling_scheme, levels = rev(names(sampling_scheme_colors)))) %>%
-  ggplot(aes(
-    x = as.character(center_point),
-    y = .data[[ paste0("mean_", incidence) ]],
-    color = sampling_scheme,
-    group = sampling_scheme
-  )) +
-  geom_errorbar(aes(
-    #ymin = .data[[paste0("mean_", incidence)]] - .data[[paste0("sd_", incidence)]],
-    #ymax = .data[[paste0("mean_", incidence)]] + .data[[paste0("sd_", incidence)]]), 
-    ymin = .data[[paste0("min_", incidence)]],
-    ymax = .data[[paste0("max_", incidence)]]),
-    size = 1,
-    width = 0.4,
-    position = j) +
-  scale_color_manual(values = sampling_scheme_colors) +
-  geom_point(#aes(size = .data[[ paste0("count_", incidence) ]]),
-    size=3,         
-    position = j) +
-  labs(y = "Yearly reported incidence per 1k\n(Inferred)",
-       x = paste(y_labs[names(y_labs) == metric], "(Measured)", sep="\n"),
-       #size="Total\nsimulations",
-       color="Sampling scheme") +
-  scale_x_discrete(breaks=center_lines,
-                   labels=LETTERS[1:length(center_lines)]) +
-  guides(size  = guide_legend(order = 2),
-         color = guide_legend(order = 1)) +
-  scale_y_log10() +
-  theme(
-    legend.position = c(0.3, 0.80),
-    legend.background = element_rect(fill = "#F5F3ED"),
-    legend.box       = "horizontal",    # <- stack multiple legends side-by-side
-    legend.box.just  = "left" ,
-    # 1) make the key boxes (and points inside) a bit bigger:
-    legend.key.size  = unit(0.75, "lines"),
-    # 2) add a little extra horizontal space between the two legends:
+
+only_show_A <- TRUE
+# Add a 'show' flag and keep all rows (to preserve x-axis)
+plot_data <- sampling_inc_summary %>%
+  mutate(
+    center_point_chr = as.character(center_point),  # fix coercion issue
+    center_line_chr = as.character(center_lines[1]),
+    
+    show = if (only_show_A) {
+      center_point_chr == center_line_chr
+    } else {
+      TRUE
+    },
+    
+    median_plot = ifelse(show, .data[[paste0("median_", input_incidence)]], NA),
+    min_plot    = ifelse(show, .data[[paste0("min_", input_incidence)]], NA),
+    max_plot    = ifelse(show, .data[[paste0("max_", input_incidence)]], NA)
   )
 
-ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_IncidenceMeansPointEstimates_", names(y_names)[y_names == metric], "YearsAll_Range.png"),
-    plot = specific_points_p,
-    path = plot_dir,
-    width = 5.5, height = 4, units = c("in"), dpi = 300)
+
+j <- position_dodge2(width = 0.4, 
+                     preserve = "single",
+                     reverse  = TRUE)
+
+specific_points_p <- ggplot(plot_data, aes(
+  x = as.character(center_point),
+  y = .data[[ paste0("median_", input_incidence) ]],
+  color = sampling_scheme,
+  group = sampling_scheme
+)) +
+  make_transmission_background(cuts, transmission_colors, axis="y", max_val=650) + 
   
+  # Plot error bars only for visible points
+  geom_errorbar(aes(
+    ymin = min_plot,
+    ymax = max_plot
+  ),
+  size = 1,
+  width = 0.4,
+  position = j
+  ) +
+  
+  # Plot points only for visible data
+  geom_point(
+    aes(y = median_plot),
+    size = 3,
+    position = j
+  ) +
+  
+  scale_color_manual(values = sampling_colors_2) +
+  labs(
+    y = "Yearly reported incidence per 1k\n(Inferred)",
+    x = paste(y_labs[names(y_labs) == input_metric], "(Measured)", sep="\n"),
+    color = "Sampling scheme\n(100 samples)"
+  ) +
+  scale_x_discrete(
+    breaks = center_lines,
+    labels = LETTERS[1:length(center_lines)]
+  ) +
+  scale_y_continuous(breaks = c(100, 250, 450), limits = c(0,650)) +
+  guides(
+    size  = guide_legend(order = 2),
+    color = guide_legend(order = 1, reverse = TRUE),
+    shape = guide_legend(reverse = TRUE)
+  ) +
+  theme(
+    legend.position = c(0.30, 0.80),
+    legend.background = element_rect(fill = NA, color = NA),
+    legend.key = element_rect(fill = NA, colour = NA),
+    legend.box = "horizontal",
+    legend.box.just = "left",
+    legend.key.size = unit(0.75, "lines")
+  )
+# specific_points_p <- sampling_inc_summary %>%
+#   ggplot(aes(
+#     x = as.character(center_point),
+#     y = .data[[ paste0("median_", input_incidence) ]],
+#     color = sampling_scheme,
+#     group = sampling_scheme
+#   )) +
+#   make_transmission_background(cuts, transmission_colors, axis="y", max_val=550) + 
+#   geom_errorbar(aes(
+#     #ymin = .data[[paste0("mean_", incidence)]] - .data[[paste0("sd_", incidence)]],
+#     #ymax = .data[[paste0("mean_", incidence)]] + .data[[paste0("sd_", incidence)]]), 
+#     ymin = .data[[paste0("min_", input_incidence)]],
+#     ymax = .data[[paste0("max_", input_incidence)]]),
+#     # ymin = .data[[paste0("IQR_25_", incidence)]],
+#     # ymax = .data[[paste0("IQR_75_", incidence)]]),
+#     size = 1,
+#     width = 0.4,
+#     position = j) +
+#   scale_color_manual(values = sampling_colors_2) +
+#   geom_point(#aes(size = .data[[ paste0("count_", incidence) ]]),
+#     size=3,         
+#     position = j) +
+#   labs(y = "Yearly reported incidence per 1k\n(Inferred)",
+#        x = paste(y_labs[names(y_labs) == input_metric], "(Measured)", sep="\n"),
+#        #size="Total\nsimulations",
+#        color="Sampling scheme\n(100 samples)") +
+#   scale_x_discrete(breaks=center_lines,
+#                    labels=LETTERS[1:length(center_lines)]) +
+#   scale_y_continuous(breaks = c(100, 250, 450)) +
+#   guides(size  = guide_legend(order = 2),
+#          color = guide_legend(order = 1, reverse = TRUE),
+#          shape  = guide_legend(reverse = TRUE)
+# ) +
+#   #scale_y_log10() +
+#   theme(
+#     legend.position = c(0.30, 0.80),
+#     #legend.background = element_rect(fill = "#F5F3ED"),
+#     legend.background = element_rect(fill = NA, color = NA),
+#     legend.key = element_rect(fill = NA, colour = NA),
+#     legend.box       = "horizontal",    # <- stack multiple legends side-by-side
+#     legend.box.just  = "left" ,
+#     # 1) make the key boxes (and points inside) a bit bigger:
+#     legend.key.size  = unit(0.75, "lines"),
+#     # 2) add a little extra horizontal space between the two legends:
+#   )
+specific_points_p
+
+ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_IncidenceMeansPointEstimates_", names(y_names)[y_names == input_metric], "YearsAll_RangeAOnly.png"),
+       plot = specific_points_p,
+       path = plot_dir,
+       width = 3.5, height = 4, units = c("in"), dpi = 300)
+
 
 ################################################################################
 # Statistics 
 ################################################################################  
-bin_order_vector <- levels(year_summaries$year_incidence_bin)
-# All metrics, per year 
-for(input_year in unique(year_summaries$year)){
-  res <- IncidencePairwiseCalc(
-    data       = dplyr::filter(year_summaries, year == input_year & importation_rate == "low"),
-    y_vars     = y_vars,                
-    group_vars = c("year_incidence_bin",     
-                   "sampling_scheme"),
-    adjust.method = "BH"
-  ) %>%
-    IncidencePairwiseEdit(.) %>%
-    dplyr::mutate(pair_var = factor(pair_var, levels = c(names(sampling_scheme_colors), "Different grouping variable")))
-  
-  ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_StatusBins50_Year", input_year, "LowImport.png"), 
-         #plot = IncidenceBinSignificancePlots(dplyr::filter(res, !grepl("Different", pair_var))), 
-         plot = IncidenceBinSignificancePlots(dplyr::filter(res, pair_var %in% sampling_subset)),
-         path = plot_dir,
-         width = 8, height = 6.5, units = c("in"), dpi = 300)
-}
-
-
-#### Check means for statistics
-multisim_summary_bybins <- TimeScaleSummaryStats(df = dplyr::filter(year_summaries, importation_rate == "low"), 
-                                                 bin="year_incidence_bin")
-
-lapply(unique(multisim_summary_bybins$year), function(j){
-  df <- dplyr::filter(multisim_summary_bybins, year == j)
-  
-  count_p <- dplyr::filter(df, sampling_scheme == "All - Yearly") %>% 
-    select(year_incidence_bin, total_count) %>% unique() %>%
-    ggplot(aes(x=year_incidence_bin, y=total_count, fill=year_incidence_bin)) + geom_col() +
-    labs(x="", y="Simulations", fill = "Yearly\nincidence\nbin")
-  means_p <- IndividualSamplingSchemeMeansPlot(df, color_variable = "year_incidence_bin") +
-    labs(color = "Yearly\nincidence\nbin")
-  
-  p <- ggpubr::ggarrange(count_p, means_p, ncol=1, heights = c(.33,1),
-                         common.legend = T, legend="right")
-  
-  ggsave(paste0(format(Sys.time(), "%Y%m%d"), "MetricMeansBySamplingBins_Year", j, "LowImport.png"), 
-         plot = p, path = plot_dir,
-         width = 7, height = 5, units = c("in"), dpi = 300)
-})
-
-# All metrics divided by year - all sampled infections
-res_by_year <- IncidencePairwiseCalc(
-  data       = year_summaries %>% filter(sampling_scheme == "All - Yearly"),
-  y_vars     = y_vars,                 
-  group_vars = c("year_incidence_bin",     
-                 "year"),
-  adjust.method = "BH"
-) %>%
-  IncidencePairwiseEdit(.)
-
-ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_StatusBins50_ByYear_AllInfections.png"), 
-       plot = IncidenceBinSignificancePlots(dplyr::filter(res_by_year, !grepl("Different", pair_var))), 
-       path = plot_dir,
-       width = 12, height = 6.5, units = c("in"), dpi = 300) 
-
-# Comparing sampling schemes 
-input_year=0
-res <- IncidencePairwiseCalc(
-  data       = dplyr::filter(year_summaries, year == input_year),
-  y_vars     = y_vars,                 
-  group_vars = c("year_incidence_bin",     
-                 "sampling_scheme"),
-  adjust.method = "BH"
-) %>%
-  IncidencePairwiseEdit(.) %>%
-  dplyr::mutate(pair_var = factor(pair_var, levels = c(names(sampling_scheme_colors), "Different grouping variable")))
+# bin_order_vector <- levels(year_summaries$year_incidence_bin)
+# # All metrics, per year 
+# for(input_year in unique(year_summaries$year)){
+#   res <- IncidencePairwiseCalc(
+#     data       = dplyr::filter(year_summaries, year == input_year & importation_rate == "low"),
+#     y_vars     = y_vars,                
+#     group_vars = c("year_incidence_bin",     
+#                    "sampling_scheme"),
+#     adjust.method = "BH"
+#   ) %>%
+#     IncidencePairwiseEdit(.) %>%
+#     dplyr::mutate(pair_var = factor(pair_var, levels = c(names(sampling_scheme_colors), "Different grouping variable")))
+#   
+#   ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_StatusBins50_Year", input_year, "LowImport.png"), 
+#          #plot = IncidenceBinSignificancePlots(dplyr::filter(res, !grepl("Different", pair_var))), 
+#          plot = IncidenceBinSignificancePlots(dplyr::filter(res, pair_var %in% sampling_subset)),
+#          path = plot_dir,
+#          width = 8, height = 6.5, units = c("in"), dpi = 300)
+# }
+# 
+# 
+# #### Check means for statistics
+# multisim_summary_bybins <- TimeScaleSummaryStats(df = dplyr::filter(year_summaries, importation_rate == "low"), 
+#                                                  bin="year_incidence_bin")
+# 
+# lapply(unique(multisim_summary_bybins$year), function(j){
+#   df <- dplyr::filter(multisim_summary_bybins, year == j)
+#   
+#   count_p <- dplyr::filter(df, sampling_scheme == "All - Yearly") %>% 
+#     select(year_incidence_bin, total_count) %>% unique() %>%
+#     ggplot(aes(x=year_incidence_bin, y=total_count, fill=year_incidence_bin)) + geom_col() +
+#     labs(x="", y="Simulations", fill = "Yearly\nincidence\nbin")
+#   means_p <- IndividualSamplingSchemeMeansPlot(df, color_variable = "year_incidence_bin") +
+#     labs(color = "Yearly\nincidence\nbin")
+#   
+#   p <- ggpubr::ggarrange(count_p, means_p, ncol=1, heights = c(.33,1),
+#                          common.legend = T, legend="right")
+#   
+#   ggsave(paste0(format(Sys.time(), "%Y%m%d"), "MetricMeansBySamplingBins_Year", j, "LowImport.png"), 
+#          plot = p, path = plot_dir,
+#          width = 7, height = 5, units = c("in"), dpi = 300)
+# })
+# 
+# # All metrics divided by year - all sampled infections
+# res_by_year <- IncidencePairwiseCalc(
+#   data       = year_summaries %>% filter(sampling_scheme == "All - Yearly"),
+#   y_vars     = y_vars,                 
+#   group_vars = c("year_incidence_bin",     
+#                  "year"),
+#   adjust.method = "BH"
+# ) %>%
+#   IncidencePairwiseEdit(.)
+# 
+# ggsave(paste0(format(Sys.time(), "%Y%m%d"), "_StatusBins50_ByYear_AllInfections.png"), 
+#        plot = IncidenceBinSignificancePlots(dplyr::filter(res_by_year, !grepl("Different", pair_var))), 
+#        path = plot_dir,
+#        width = 12, height = 6.5, units = c("in"), dpi = 300) 
+# 
+# # Comparing sampling schemes 
+# input_year=0
+# res <- IncidencePairwiseCalc(
+#   data       = dplyr::filter(year_summaries, year == input_year),
+#   y_vars     = y_vars,                 
+#   group_vars = c("year_incidence_bin",     
+#                  "sampling_scheme"),
+#   adjust.method = "BH"
+# ) %>%
+#   IncidencePairwiseEdit(.) %>%
+#   dplyr::mutate(pair_var = factor(pair_var, levels = c(names(sampling_scheme_colors), "Different grouping variable")))
