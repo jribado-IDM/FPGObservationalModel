@@ -23,14 +23,14 @@ import os
 sys.path.append(os.path.dirname(__file__))
 
 # Import all required modules
-from run_observational_model import (
+from fpg_observational_model.run_observational_model import (
     get_default_config, 
     update_matrix_indices, 
     extract_sampled_infections,
     run_observational_model
 )
 
-from unified_metric_calculations import (
+from fpg_observational_model.unified_metric_calculations import (
     identify_nested_comparisons,
     comprehensive_group_summary,
     generate_het_barcode,
@@ -44,7 +44,7 @@ from unified_metric_calculations import (
     run_time_summaries
 )
 
-from unified_sampling import (
+from fpg_observational_model.unified_sampling import (
     parse_list,
     adjust_time_columns,
     calculate_infection_metrics,
@@ -723,7 +723,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
             
             # Biased sampling should have higher monogenomic proportion
             self.assertGreater(biased_mono_prop, regular_mono_prop,
-                             f"Biased sampling ({biased_mono_prop:.2f}) should have higher mono proportion than regular ({regular_mono_prop:.2f}
+                             f"Biased sampling ({biased_mono_prop:.2f}) should have higher mono proportion than regular ({regular_mono_prop:.2f}")
 
 
 class TestScientificCalculations(unittest.TestCase):

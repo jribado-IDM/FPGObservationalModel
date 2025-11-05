@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fpg-observational-model"
+version = "1.0.0.dev0"
+description = "Observational model for EMOD's Full Parasite Genetics output to convert modeled results into recapitulative sampling for genomic surveillance"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Institute for Disease Modeling", email = "idmsupport@gatesfoundation.org"}
+]
+maintainers = [
+    {name = "Jessica Ribado", email = "Jessica.Ribado@gatesfoundation.org"}
+]
+keywords = ["malaria", "genetics", "epidemiology", "simulation", "EMOD"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9"
+]
+
+dependencies = [
+    "numpy>=1.19.0,<3.0.0",
+    "pandas>=1.3.0,<3.0.0",
+    "scipy>=1.7.0,<2.0.0",
+    "biopython>=1.78",
+    "pysam>=0.16.0",
+    "scikit-learn>=1.0.0",
+    "statsmodels>=0.12.0",
+    "networkx>=2.6",
+    "h5py>=3.1.0",
+    "tables>=3.6.0",
+    "openpyxl>=3.0.0",
+    "click>=7.0",
+    "tqdm>=4.60.0",
+    "tskit==0.3.6.dev3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "mypy>=0.950",
+]
+
+[project.urls]
+Homepage = "https://github.com/jribado-IDM/FPGObservationalModel"
+Documentation = "https://github.com/jribado-IDM/FPGObservationalModel/blob/main/README.md"
+Repository = "https://github.com/jribado-IDM/FPGObservationalModel"
+Issues = "https://github.com/jribado-IDM/FPGObservationalModel/issues"
+
+#[project.scripts]
+#fpg-observational-model = "fpg_observational_model.cli:main"
+
+[tool.setuptools.packages]
+find = {include = ["fpg_observational_model*"]}
+
+[tool.setuptools.package-data]
+fpg_observational_model = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py", "fpg_unittest.py"]
+addopts = "-v --cov=fpg_observational_model --cov-report=html --cov-report=term"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pip]
+extra-index-url = "https://packages.idmod.org/api/pypi/pypi-production/simple"

@@ -14,8 +14,10 @@ https://github.com/InstituteforDiseaseModeling/tskit/blob/idm-ibx-calculations/I
 ~~~
 python3 -m venv fpg_observational_model
 source fpg_observational_model/bin/activate
-pip install -r requirements.txt
-# Install the IDM tskit improvements for IBx calculations
+# Install in editable mode
+pip install -e .
+# Or install as regular package
+pip install .
 ~~~
 
 ## Config Parameters

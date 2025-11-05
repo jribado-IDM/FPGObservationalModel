@@ -8,8 +8,8 @@ import inspect
 import json
 from os.path import basename
 
-from unified_sampling import run_sampling_model
-from unified_metric_calculations import register_matrix, run_time_summaries, generate_het_barcode
+from fpg_observational_model.unified_sampling import run_sampling_model
+from fpg_observational_model.unified_metric_calculations import register_matrix, run_time_summaries, generate_het_barcode
 
 
 #####################################################################################
