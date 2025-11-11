@@ -5,7 +5,6 @@ __pycache__/
 
 # User specified
 experimental_code/
-fpg_observational_model/
 output/
 
 # C extensions

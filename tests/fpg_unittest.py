@@ -18,6 +18,8 @@ from itertools import combinations
 from unittest.mock import patch, MagicMock
 import sys
 import os
+import tempfile
+import shutil
 
 # Add the current directory to the path to import your modules
 sys.path.append(os.path.dirname(__file__))
@@ -41,7 +43,8 @@ from fpg_observational_model.unified_metric_calculations import (
     process_nested_ibx,
     ibx_distribution,
     weighted_describe_scipy,
-    run_time_summaries
+    run_time_summaries,
+    calculate_rh
 )
 
 from fpg_observational_model.unified_sampling import (
@@ -86,6 +89,13 @@ class TestBasicFunctionality(unittest.TestCase):
         # Register a test matrix
         self.test_matrix = np.random.randint(0, 2, size=(20, 100))
         register_matrix('basic_test_matrix', self.test_matrix)
+
+    def tearDown(self):
+        """Clean up registered matrices"""
+        # Clear the matrix registry if possible
+        # Or at least document that tests may interfere with each other
+        from fpg_observational_model.unified_metric_calculations import _matrix_registry
+        _matrix_registry.clear()
     
     def test_get_default_config(self):
         """Test default configuration structure"""
@@ -415,6 +425,24 @@ class TestSamplingAndFiltering(unittest.TestCase):
 
         # ADD THIS TEST CLASS TO YOUR EXISTING TEST SUITE
 
+    def test_calculate_infection_metrics_edge_cases(self):
+        """Test infection metrics with edge cases"""
+        # Empty genome_ids
+        edge_df = pd.DataFrame({
+            'infIndex': [0],
+            'recursive_nid': ['[]'],
+            'genome_ids': ['[]'],
+            'bite_ids': ['[]'],
+            'simulation_year': [1],
+            'month': [1]
+        })
+
+        df_with_continuous = convert_month(edge_df.copy())
+        result_df = calculate_infection_metrics(df_with_continuous)
+
+        # Should handle empty lists gracefully
+        self.assertEqual(result_df.loc[0, 'true_coi'], 0)
+
 class TestMonogenomicProportionSampling(unittest.TestCase):
     """Test monogenomic proportion sampling functionality in subset_randomly"""
     
@@ -448,9 +476,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_basic_functionality(self):
         """Test basic monogenomic proportion sampling works"""
-        
-        from unified_sampling import subset_randomly
-        
+
         # Test 50% monogenomic proportion
         result_df = subset_randomly(
             self.biased_sampling_df,
@@ -483,9 +509,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_accuracy(self):
         """Test that monogenomic proportion sampling achieves target proportions"""
-        
-        from unified_sampling import subset_randomly
-        
+
         test_cases = [
             (0.3, "30% monogenomic"),
             (0.7, "70% monogenomic"), 
@@ -521,9 +545,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_edge_cases(self):
         """Test edge cases for monogenomic proportion sampling"""
-        
-        from unified_sampling import subset_randomly
-        
+
         # Test with proportion = 0 (no monogenomic)
         result_df_0 = subset_randomly(
             self.biased_sampling_df,
@@ -560,9 +582,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_insufficient_samples(self):
         """Test behavior when insufficient samples of one type are available"""
-        
-        from unified_sampling import subset_randomly
-        
+
         # Create data with very few polygenomic samples
         few_poly_df = pd.DataFrame({
             'infIndex': list(range(20)),
@@ -594,9 +614,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_with_multiple_replicates(self):
         """Test monogenomic proportion sampling with multiple replicates"""
-        
-        from unified_sampling import subset_randomly
-        
+
         result_df = subset_randomly(
             self.biased_sampling_df,
             n_samples_year=16,
@@ -625,9 +643,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_validation(self):
         """Test validation of monogenomic proportion parameter"""
-        
-        from unified_sampling import subset_randomly
-        
+
         # Test invalid proportions (should handle gracefully or raise appropriate error)
         invalid_proportions = [-0.1, 1.1, 2.0]
         
@@ -651,9 +667,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_reproducibility(self):
         """Test that monogenomic proportion sampling is reproducible with same seed"""
-        
-        from unified_sampling import subset_randomly
-        
+
         # Run twice with same seed
         result1 = subset_randomly(
             self.biased_sampling_df,
@@ -686,9 +700,7 @@ class TestMonogenomicProportionSampling(unittest.TestCase):
     
     def test_monogenomic_proportion_vs_regular_sampling(self):
         """Test that monogenomic proportion sampling differs from regular random sampling"""
-        
-        from unified_sampling import subset_randomly
-        
+
         # Regular random sampling
         regular_result = subset_randomly(
             self.biased_sampling_df,
@@ -1015,6 +1027,13 @@ class TestMatrixOperations(unittest.TestCase):
             [0, 0, 1, 1, 1],  # genome 4 - different
         ])
         register_matrix('ibx_test_matrix', self.ibx_matrix)
+
+    def tearDown(self):
+        """Clean up registered matrices"""
+        from fpg_observational_model.unified_metric_calculations import _matrix_registry
+        # Only clear test matrices
+        _matrix_registry.pop('small_test_matrix', None)
+        _matrix_registry.pop('ibx_test_matrix', None)
     
     def test_matrix_registration_and_retrieval(self):
         """Test matrix registration system"""
@@ -1193,49 +1212,44 @@ class TestIntegrationScenarios(unittest.TestCase):
             
             self.assertEqual(row['true_coi'], expected_true_coi)
             self.assertEqual(row['effective_coi'], expected_effective_coi)
-    
-    @patch('run_observational_model.pd.read_csv')
-    @patch('os.path.exists')
-    @patch('os.makedirs')
-    def test_run_observational_model_mock_integration(self, mock_makedirs, mock_exists, mock_read_csv):
-        """Test main observational model function with mocked dependencies"""
-        
-        # Mock file operations
-        mock_exists.return_value = False
-        mock_read_csv.return_value = pd.DataFrame({
-            'infIndex': [0, 1, 2, 3],
-            'recursive_nid': ['[0]', '[1]', '[2,3]', '[4]'],
-            'genome_ids': ['[100]', '[101]', '[102,103]', '[104]'],
-            'bite_ids': ['[1]', '[2]', '[3]', '[4]'],
-            'fever_status': [1, 0, 1, 0],
-            'population': [0, 0, 1, 1],
-            'age_day': [1000, 2000, 3000, 4000],
-            'simulation_year': [1, 1, 2, 2],
-            'month': [1, 6, 1, 6],
-            'IndividualID': [100, 101, 102, 103]
-        })
-        
-        # This should run without array boolean errors
+
+    def test_run_observational_model_with_temp_dir(self):
+        """Test main observational model function with temporary directory"""
+
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp()
+
         try:
-            summaries, samples = run_observational_model(
-                sim_name="integration_test",
-                emod_output_path="./test_data",
-                config_path="./nonexistent_config.json",
-                output_path="./test_output"
-            )
-            
-            # Verify results structure
-            self.assertIsNotNone(summaries)
-            self.assertIsNotNone(samples)
-            self.assertIsInstance(summaries, pd.DataFrame)
-            self.assertIsInstance(samples, pd.DataFrame)
-            
-        except ValueError as e:
-            if "truth value of an array" in str(e):
-                self.fail("Array boolean error still occurring in integration test")
-            else:
-                # Other errors might be expected in mock environment
-                pass
+            # Mock only the file reading
+            with patch('pandas.read_csv') as mock_read_csv:
+                mock_read_csv.return_value = pd.DataFrame({
+                    'infIndex': [0, 1, 2, 3],
+                    'recursive_nid': ['[0]', '[1]', '[2,3]', '[4]'],
+                    'genome_ids': ['[100]', '[101]', '[102,103]', '[104]'],
+                    'bite_ids': ['[1]', '[2]', '[3]', '[4]'],
+                    'fever_status': [1, 0, 1, 0],
+                    'population': [0, 0, 1, 1],
+                    'age_day': [1000, 2000, 3000, 4000],
+                    'simulation_year': [1, 1, 2, 2],
+                    'month': [1, 6, 1, 6],
+                    'IndividualID': [100, 101, 102, 103]
+                })
+
+                # Run with temp directory
+                run_observational_model(
+                    sim_name="integration_test",
+                    emod_output_path="./test_data",
+                    config_path="./nonexistent_config.json",
+                    output_path=temp_dir
+                )
+
+                # Verify outputs were created
+                expected_summary = os.path.join(temp_dir, "integration_test_FPG_ModelSummaries.csv")
+                self.assertTrue(os.path.exists(expected_summary))
+
+        finally:
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 class TestRhMetricCalculations(unittest.TestCase):
     """Test the R_h metric calculation functionality"""
@@ -1266,9 +1280,7 @@ class TestRhMetricCalculations(unittest.TestCase):
         
     def test_calculate_rh_basic_functionality(self):
         """Test basic R_h calculation functionality"""
-        
-        from unified_metric_calculations import calculate_rh
-        
+
         # Test with known data
         rh_summary, individual_rh = calculate_rh(
             self.rh_test_df, 
@@ -1300,9 +1312,7 @@ class TestRhMetricCalculations(unittest.TestCase):
     
     def test_calculate_rh_mathematical_accuracy(self):
         """Test R_h calculations with known expected values"""
-        
-        from unified_metric_calculations import calculate_rh
-        
+
         # Use fixed random seed for reproducible results
         np.random.seed(42)
         
@@ -1336,9 +1346,7 @@ class TestRhMetricCalculations(unittest.TestCase):
     
     def test_calculate_rh_edge_cases(self):
         """Test R_h calculation edge cases"""
-        
-        from unified_metric_calculations import calculate_rh
-        
+
         # Test with no COI=2 superinfections
         no_coi2_df = pd.DataFrame({
             'infIndex': [0, 1, 2],
@@ -1423,16 +1431,14 @@ class TestRhIntegration(unittest.TestCase):
         # Add sampling columns
         self.integration_df['rep_random_0'] = 1  # All sampled for simplicity
         
-    @patch('unified_metric_calculations.get_matrix')
+    @patch('fpg_observational_model.unified_metric_calculations.get_matrix')
     def test_rh_in_run_time_summaries(self, mock_get_matrix):
         """Test R_h calculation integration in run_time_summaries"""
         
         # Mock matrix
         mock_matrix = np.random.randint(0, 2, size=(50, 100))
         mock_get_matrix.return_value = mock_matrix
-        
-        from unified_metric_calculations import run_time_summaries
-        
+
         config = {
             'populations': False,
             'polygenomic': True,  # Required for R_h
@@ -1468,9 +1474,7 @@ class TestRhIntegration(unittest.TestCase):
     
     def test_rh_requires_polygenomic_comparison(self):
         """Test that R_h calculation properly requires polygenomic comparisons"""
-        
-        from unified_metric_calculations import run_time_summaries
-        
+
         # Config without polygenomic comparison should raise error
         config_no_poly = {
             'populations': False,
@@ -1479,7 +1483,7 @@ class TestRhIntegration(unittest.TestCase):
             'age_bins': False
         }
         
-        with patch('unified_metric_calculations.get_matrix') as mock_get_matrix:
+        with patch('fpg_observational_model.unified_metric_calculations.get_matrix') as mock_get_matrix:
             mock_get_matrix.return_value = np.random.randint(0, 2, size=(50, 100))
             
             # Should not crash but should warn about missing polygenomic comparisons
@@ -1498,9 +1502,7 @@ class TestRhScientificValidation(unittest.TestCase):
     
     def test_rh_mathematical_properties(self):
         """Test that R_h calculations maintain expected mathematical properties"""
-        
-        from unified_metric_calculations import calculate_rh
-        
+
         # Create test data with known mathematical relationships
         test_data = pd.DataFrame({
             'infIndex': [0, 1, 2, 3],
@@ -1534,9 +1536,7 @@ class TestRhScientificValidation(unittest.TestCase):
     
     def test_rh_bootstrap_consistency(self):
         """Test that bootstrap R_h calculations are consistent"""
-        
-        from unified_metric_calculations import calculate_rh
-        
+
         test_data = pd.DataFrame({
             'infIndex': [0, 1, 2],
             'effective_coi': [2, 2, 3],
@@ -1565,6 +1565,15 @@ class TestRhScientificValidation(unittest.TestCase):
 
 # UPDATE THE MAIN TEST RUNNER TO INCLUDE RH TESTS
 def run_all_comprehensive_tests_with_rh():
+    """
+    Custom test runner for unittest framework.
+
+    Note: When running with pytest, this function is NOT used.
+    Pytest will auto-discover and run all test classes.
+
+    To run with unittest: python fpg_unittest.py
+    To run with pytest: pytest fpg_unittest.py -v
+    """
     """Updated test runner that includes R_h metric tests"""
     
     # Define all test classes including new R_h tests
@@ -1578,7 +1587,7 @@ def run_all_comprehensive_tests_with_rh():
         TestIntegrationScenarios,
         TestRhMetricCalculations,        # NEW
         TestRhIntegration,               # NEW
-        TestRhScientificValidation       # NEW
+        TestRhScientificValidation,       # NEW
         TestMonogenomicProportionSampling # NEW
     ]
     

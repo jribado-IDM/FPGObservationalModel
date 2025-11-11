@@ -737,7 +737,7 @@ def generate_het_barcode(matrix, indices):
 
 
 # In progress - alignment to allele frequency calculations without phased genotypes from real data
-def get_heterozygous_af(df, column_name = barcode_with_ns):
+def get_heterozygous_af(df, column_name = 'barcode_with_Ns'):
     """
     Convert a column of lists into a matrix and perform calculations.
     
