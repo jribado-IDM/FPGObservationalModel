@@ -6,6 +6,8 @@ __pycache__/
 # User specified
 experimental_code/
 output/
+fpg_env*
+fpg_observational_model/plotting_code/.Rproj.user
 
 # C extensions
 *.so
