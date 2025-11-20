@@ -657,11 +657,10 @@ save_ibx_distributions=True):
                     traceback.print_exc()
                     continue              
               
-        # Add final summary to collection
-        if ibx_category not in all_ibx_dist_dict:
-            all_ibx_dist_dict[ibx_category] = {}
-        all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
-        print(all_ibx_dist_dict.keys())
+            # Add final summary to collection
+            if ibx_category not in all_ibx_dist_dict:
+                all_ibx_dist_dict[ibx_category] = {}
+            all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
 
         all_summary_dataframes.append(summary_stats)
         print(f"Final summary for {sampling_column}: {summary_stats.shape}")

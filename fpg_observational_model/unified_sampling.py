@@ -124,7 +124,7 @@ def apply_emod_filters(infection_df,
     
     # Apply COI filter
     if monogenomic_filter:
-        coi_col = 'effective_coi' if coi_filter is None else coi_filter
+        coi_col = 'effective_coi' 
         if coi_col not in df.columns:
             raise ValueError(f"{coi_col} column not found but monogenomic_filter requested. Run calculate_infection_metrics() first.")
         
