@@ -8,16 +8,12 @@ This repository contains scripts for EMOD's Full Parasite Genetics output to con
 
 ## Environment set-up
 
-This model still uses versions of IDM's improved tskit IBD calculations for speed:
-https://github.com/InstituteforDiseaseModeling/tskit/blob/idm-ibx-calculations/IDMEXT.md. Follow the set up instructions in the activated virtual env after the initial build. 
+This model requires Pytohn 3.9 to be compatible with IDM tskit. To set up the environment.
 
 ~~~
-python3 -m venv fpg_observational_model
-source fpg_observational_model/bin/activate
-# Install in editable mode
-pip install -e .
-# Or install as regular package
-pip install .
+python3 -m venv fpg_env
+source fpg_env/bin/activate
+pip install -r requirements.txt
 ~~~
 
 ## Config Parameters
