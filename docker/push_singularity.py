@@ -1,3 +1,5 @@
+import warnings
+
 from idmtools.core.platform_factory import Platform
 from idmtools_platform_comps.utils.singularity_build \
                                          import SingularityBuildWorkItem
@@ -7,12 +9,23 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
                comps_url: str = 'https://comps.idmod.org', comps_env: str = 'Calculon', os_name: str = 'rocky'
                ) -> None:
     """
-    Build the EMOD observation model singularity image from definition file or singularity file on COMPS and save the asset id to a file.
+    Build the EMOD observation model singularity image from definition file or singularity file on COMPS and save the
+    asset id to a file.
+    Args:
+        def_file_name (str): Path to the Singularity definition file(.def), default is 'Singularity.def'. If provided,
+                             this will be used to build the image instead of sif_file_name.
+        sif_file_name (str): Path to the Singularity image file(.sif), default is None which means build from def file.
+        comps_url (str): COMPS endpoint URL, default is 'https://comps.idmod.org'.
+        comps_env (str): COMPS environment name to use, default is 'Calculon'.
+        os_name (str): Operating system name for the image, default is 'rocky'.
     """
     # Prepare the platform
     plat_obj = Platform(type='COMPS',
                         endpoint=comps_url,
                         environment=comps_env)
+
+    if def_file_name is not None and sif_file_name is not None:
+        warnings.warn("Both def_file_name and sif_file_name are provided. def_file_name will be used.")
 
     # Create Singularity build work item
     if def_file_name is not None:
