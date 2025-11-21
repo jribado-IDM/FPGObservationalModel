@@ -3,8 +3,8 @@ From: rockylinux:9.2
 Stage: spython-base
 
 %files
-docker/pip.conf /root/.pip
-requirements.txt /tmp/
+# docker/pip.conf /root/.pip
+# requirements.txt /tmp/
 
 %post
 # FROM docker-production.packages.idmod.org/dtk-rocky-buildenv:0.2-dev
