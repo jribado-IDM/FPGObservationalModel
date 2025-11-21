@@ -26,6 +26,7 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
 
     if def_file_name is not None and sif_file_name is not None:
         warnings.warn("Both def_file_name and sif_file_name are provided. def_file_name will be used.")
+        sif_file_name = None
 
     # Create Singularity build work item
     if def_file_name is not None:
@@ -58,4 +59,25 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
 
 
 if __name__ == "__main__":
-    make_asset()
+    import argparse
+    parser = argparse.ArgumentParser(description='Build Observational Model Singularity image and save asset id to file.')
+    parser.add_argument('--file', '-f', type=str, default='Singularity.def',
+                        help='Path to the Singularity definition file (.def) or image file (.sif) to build from. '
+                             'Default is Singularity.def')
+    parser.add_argument('--comps_url', type=str, default='https://comps.idmod.org',
+                        help='COMPS endpoint URL. Default is https://comps.idmod.org')
+    parser.add_argument('--comps_env', type=str, default='Calculon',
+                        help='COMPS environment name to use. Default is Calculon')
+    parser.add_argument('--os_name', type=str, default='rocky',
+                        help='Operating system name for the image. Default is rocky')
+    args = parser.parse_args()
+    if args.file.endswith('.def'):
+        def_file = args.file
+        sif_file = None
+    elif args.file.endswith('.sif'):
+        def_file = None
+        sif_file = args.file
+    else:
+        raise ValueError('The provided file must be either a .def or .sif file.')
+    make_asset(def_file_name=def_file, sif_file_name=sif_file, comps_url=args.comps_url,
+               comps_env=args.comps_env, os_name=args.os_name)
