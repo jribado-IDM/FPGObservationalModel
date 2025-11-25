@@ -117,8 +117,6 @@ def comprehensive_group_summary(group):
     epoly_count = epoly_mask.sum()
     epoly_prop = epoly_count / n
 
-
-
     # Full COI statistics
     true_coi_stats = _comprehensive_stats(group['true_coi'], 'true_coi')
     effective_coi_stats = _comprehensive_stats(group['effective_coi'], 'effective_coi')
@@ -233,6 +231,23 @@ def _empty_comprehensive_summary():
             base_stats[f'{prefix}_{stat}'] = np.nan
     
     return pd.Series(base_stats)
+
+def get_variant_coi(matrix, indices):
+    """Checks for unique genotype within an infection from the variant panel.
+
+    TODO: Add option to account for densities to potentially mask polygenomic samples due to low density.
+    """
+    if len(indices) == 0:
+        return []
+        
+    try:
+        subset_matrix = matrix[indices, :]
+        unique_rows = np.unique(subset_matrix, axis=0)
+        return unique_rows.shape[0]
+
+    except Exception as e:
+        print(f"Error in generate_het_barcode: {e}")
+        return []    
 
 
 ################################################################################
@@ -368,7 +383,6 @@ def process_nested_summaries(nested_indices, sampling_df, comprehensive_group_su
         group_subset = sampling_df[sampling_df['infIndex'].isin(indices)]
         summary = comprehensive_group_summary(group_subset)
         
-        # FIXED: Ensure summary is converted to dict properly
         if isinstance(summary, pd.Series):
             summary_dict = summary.to_dict()
         else:
@@ -549,6 +563,7 @@ subpop_config = None,
 add_monthly = False, 
 user_ibx_categories = None,
 individual_ibx_calculation=True,
+fws_calculation=True,
 rh_calculation=True,
 save_ibx_distributions=True):
     
@@ -569,6 +584,11 @@ save_ibx_distributions=True):
         # Get base summary statistics
         summary_stats = process_nested_summaries(nested_dict, sampling_df, comprehensive_group_summary)
         summary_stats.insert(0, 'sampling_scheme', sampling_column)
+
+        # Process Fws calculations if specified
+        if fws_calculation:
+            fws_stats = process_nested_fws(nested_dict, sampling_df)
+            summary_stats = summary_stats.merge(fws_stats, on=['comparison_type', 'year_group', 'subgroup'], how='left')
 
         # Process IBx categories if they exist
         if user_ibx_categories and len(user_ibx_categories) > 0: 
@@ -684,24 +704,6 @@ save_ibx_distributions=True):
 #####################################################################################
 # Heterozygosity calculations
 #####################################################################################
-def get_variant_coi(matrix, indices):
-    """Checks for unique genotype within an infection from the variant panel.
-
-    TODO: Add option to account for densities to potentially mask polygenomic samples due to low density.
-    """
-    if len(indices) == 0:
-        return []
-        
-    try:
-        subset_matrix = matrix[indices, :]
-        unique_rows = np.unique(subset_matrix, axis=0)
-        return unique_rows.shape[0]
-
-    except Exception as e:
-        print(f"Error in generate_het_barcode: {e}")
-        return []    
-
-
 def generate_het_barcode(matrix, indices):
     """Checks for unique alleles at each locus for a specified set of genotypes identified by indices.
     If all alleles are the same at a locus, returns '0' or '1' for that locus.
@@ -713,10 +715,11 @@ def generate_het_barcode(matrix, indices):
     TODO: Add option to account for densities to potentially mask polygenomic samples due to low density.
     """
     if len(indices) == 0:
-        return []
+        return 0, []
     
     try:
         subset_matrix = matrix[indices, :]
+        unique_rows = np.unique(subset_matrix, axis=0)
         
         # Check each column (locus)
         barcode = []
@@ -728,11 +731,13 @@ def generate_het_barcode(matrix, indices):
             else:
                 barcode.append('N')
         
-        return barcode
+        print(unique_rows.shape[0])
+        print(barcode)
+        return unique_rows.shape[0], barcode
         
     except Exception as e:
         print(f"Error in generate_het_barcode: {e}")
-        return []
+        return 0, []
 
 
 # In progress - alignment to allele frequency calculations without phased genotypes from real data
@@ -750,47 +755,88 @@ def get_heterozygous_af(df, column_name = 'barcode_with_Ns'):
     Returns:
     --------
     results : list
-        List of calculated proportions for each position
+        List of calculated heterozygous proportions for each position and the allele frequencies at each position including heterozygous calls.
     """
     # Convert lists to matrix (each row becomes a row in the matrix)
-    matrix = np.array(df[column_name].tolist())
+    matrix = np.array(df[column_name].tolist(), dtype=object)
+    matrix = np.where(matrix == 'N', np.nan, matrix).astype(float)
+    # Count of heterozygous positions (N) in the infections
+    heterozygous_counts = np.sum(np.isnan(matrix), axis=0)
+    heterozygous_proportions = np.round(heterozygous_counts / matrix.shape[0], 3)
+    # Calculate alternative allele frequencies (sum 1s / total non-heterozygous calls)
+    alternative_allele_counts = np.sum(matrix == 1, axis=0)
+    nonheterozygous_counts = matrix.shape[0] - heterozygous_counts
+    allele_frequencies = np.divide(
+        alternative_allele_counts, 
+        nonheterozygous_counts, 
+        out=np.zeros_like(alternative_allele_counts, dtype=float), 
+        where=nonheterozygous_counts != 0
+    )
+    allele_frequencies = np.round(allele_frequencies, 3)
     
-    # For each position in N, calculate: count of 1s / count of (0s + 1s)
-    # Ignore 'N' values or NaN
-    proportions = []
-    
-    for col_idx in range(matrix.shape[1]):
-        column_data = matrix[:, col_idx]
-        
-        # Filter out 'N' values and convert to numeric if needed
-        # Adjust this based on your actual data type
-        valid_values = []
-        for val in column_data:
-            if val != 'N' and val is not None and not (isinstance(val, float) and np.isnan(val)):
-                valid_values.append(val)
-        
-        valid_values = np.array(valid_values)
-        
-        # Count 1s and 0s
-        ones_count = np.sum(valid_values == 1)
-        zeros_and_ones_count = np.sum((valid_values == 0) | (valid_values == 1))
-        
-        # Calculate proportion
-        if zeros_and_ones_count > 0:
-            proportion = ones_count / zeros_and_ones_count
-        else:
-            proportion = np.nan
-        
-        proportions.append(proportion)
-        
-    return proportions
+    return heterozygous_proportions, allele_frequencies
 
-# Example usage:
-# df = pd.DataFrame({
-#     'data': [[1, 0, 1, 'N', 1], [0, 1, 1, 0, 'N'], [1, 1, 0, 1, 1]]
-# })
-# 
-# barcode_af = get_heterozygous_af(df, 'data')
+
+def process_nested_fws(nested_indices, sampling_df):
+    fws_stats_list = []
+    
+    def add_fws_summary(indices, comparison_type, year_group, subgroup=None):
+        group_subset = sampling_df[sampling_df['infIndex'].isin(indices)]
+
+        group_het, group_af = get_heterozygous_af(group_subset[group_subset['infIndex'].isin(indices)], column_name='barcode_with_Ns')
+        group_het_mean = np.mean(group_het)
+        group_subset['fws'] = group_subset['heterozygosity']/group_het_mean if group_het_mean != 0 else np.nan
+
+        fws_mean = group_subset['fws'].mean()
+        fws_median = group_subset['fws'].median()
+        fws_std = group_subset['fws'].std()
+        
+        fws_stats_list.append({
+            'comparison_type': comparison_type,
+            'year_group': str(year_group),
+            'subgroup': str(subgroup) if subgroup is not None else None,
+            'heterozygosity_mean': round(group_het_mean, 3),
+            'heterozygosity_per_position': group_het.tolist(),
+            'heterozygosity_allele_frequencies': group_af.tolist(),
+            'fws_mean': round(fws_mean, 3),
+            'fws_median': round(fws_median, 3),
+            'fws_std': round(fws_std, 3)
+        })
+    
+    for comparison_type, data in nested_indices.items():
+        if comparison_type in ['group_year', 'group_month']:
+            for key, indices in data.items():
+                if isinstance(key, tuple):
+                    year_group = f"{key[0]}_{key[1]}" if comparison_type == 'group_month' else str(key[0])
+                    
+                    add_fws_summary(indices, comparison_type, year_group)
+            
+                else:
+                    add_fws_summary(indices, comparison_type, str(key))
+        elif comparison_type.startswith('seasonal'):
+            for key, indices in data.items():
+                add_fws_summary(indices, comparison_type, str(key))
+        else:
+            for key, indices in data.items():
+                if isinstance(key, tuple) and len(key) == 2:
+                    year_group, subgroup = key
+                    if not isinstance(indices, float):  # Skip NaN values
+                        add_fws_summary(indices, comparison_type, str(year_group), str(subgroup))
+                elif isinstance(indices, dict):
+                    year_group = str(key)
+                    for subgroup, sub_indices in indices.items():
+                        if not isinstance(sub_indices, float):
+                            add_fws_summary(sub_indices, comparison_type, year_group, str(subgroup))
+                else:
+                    if not isinstance(indices, float):
+                        add_fws_summary(indices, comparison_type, str(key), None)
+    
+    if fws_stats_list:
+        result_df = pd.DataFrame(fws_stats_list)
+        print(f"Created Fws summary DataFrame with shape: {result_df.shape}")
+        return result_df
+    else:
+        print("Warning: No Fws summary")
 
 #####################################################################################
 # Matching partner summary statistics

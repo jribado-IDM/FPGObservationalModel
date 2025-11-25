@@ -8,6 +8,9 @@ import inspect
 import json
 from os.path import basename
 
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from fpg_observational_model.unified_sampling import run_sampling_model
 from fpg_observational_model.unified_metric_calculations import register_matrix, run_time_summaries, generate_het_barcode
 
@@ -56,6 +59,7 @@ def get_default_config():
             'identity_by_descent': False,
             'identity_by_state': True,
             'individual_ibx': True,
+            'fws': True,
             'monogenomic_proportion': True,
             'rh': True,
             'unique_genome_proportion': True # Will calculate both the proportion of unique genomes in the sampled infections to replicate phasing and from monogenomic samples with an effective COI of 1  only to match barcode limits.
@@ -328,19 +332,19 @@ def run_observational_model(
     if config['metrics']['identity_by_state'] or config['metrics'].get('heterozygosity', True) or config['metrics']['rh']:
         user_specified_ibx.append('ibs')
         genotype_matrix_path = f'{emod_output_path}/variants.npy'
-        print(genotype_matrix_path)
+     
         if os.path.exists(genotype_matrix_path):
             # mmap_mode removed since it does not work on VM, conflicts with memory mapping between simulations for now. Worth revisiting for dtk_post_process performance improvements.
             # ibs_matrix = np.load(genotype_matrix_path, mmap_mode='r')
             ibs_matrix = load_matrix_safely(genotype_matrix_path)
         else:
             print(f"Error: {genotype_matrix_path} not found. Loading test data.") 
-            ibs_matrix = np.load("test_data/test_variants.npy", mmap_mode='r')
+            ibs_matrix = np.load("../test_data/variants.npy", mmap_mode='r')
         register_matrix('ibs_matrix', ibs_matrix)
 
     if config['metrics'].get('heterozygosity', True) and ibs_matrix is not None:
         # Generate barcode with Ns for heterozygosity calculations
-        sample_df['barcode_with_Ns'] = sample_df.apply(lambda row: generate_het_barcode(ibs_matrix, row['recursive_nid']), axis=1)
+        sample_df[['genotype_coi', 'barcode_with_Ns']] = sample_df.apply(lambda row: generate_het_barcode(ibs_matrix, row['recursive_nid']), axis=1, result_type='expand')
 
         sample_df['heterozygosity'] = sample_df['barcode_with_Ns'].apply(
             lambda x: x.count('N')/len(x) if isinstance(x, list) and len(x) > 0 else 0
@@ -432,7 +436,7 @@ def process_file(file_row, output_summary_dir, config_path=None, verbose=False):
 if __name__ == "__main__":
     # Example usage
     sim_name = "test_simulation"
-    emod_output_path = "./test_data"  # Adjust as needed
+    emod_output_path = "../tests/test_data"  # Adjust as needed
     config_path = "./config.json"     # Adjust as needed
     output_path = "output"          
     
