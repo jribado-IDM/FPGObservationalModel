@@ -1,5 +1,5 @@
 # FROM docker-production.packages.idmod.org/dtk-rocky-buildenv:0.2-dev
-# Replace the following lines with above line after the offical image is available
+# Replace the following lines with above line after the official image is available
 #############################################################
 FROM rockylinux:9.2
 # Set the timezone and the frontend

@@ -8,7 +8,7 @@ Stage: spython-base
 
 %post
 # FROM docker-production.packages.idmod.org/dtk-rocky-buildenv:0.2-dev
-# Replace the following lines with above line after the offical image is available
+# Replace the following lines with above line after the official image is available
 #############################################################
 # Set the timezone and the frontend
 export TZ=UTC
@@ -36,7 +36,7 @@ yum clean all
 
 # Set timezone
 ln -snf /usr/share/zoneinfo/$TZ /etc/localtime
-echo $TZ > /etc/timezone 
+echo $TZ > /etc/timezone
 
 # Install pip
 python3 -m pip install pip --upgrade
