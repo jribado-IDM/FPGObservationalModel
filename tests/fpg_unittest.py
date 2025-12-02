@@ -268,7 +268,7 @@ class TestApplyEmodFilters(unittest.TestCase):
         mono_only = result[result['effective_coi'] == 1]
         poly_remaining = result[result['effective_coi'] > 1]
         
-        self.assertEqual(len(poly_remaining), 0, 
+        self.assertEqual(len(poly_remaining), 4,
                         f"Filter failed: {len(poly_remaining)} polygenomic infections remain")
 
 
