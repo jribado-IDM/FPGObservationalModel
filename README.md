@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ~~~
 
 ## Config Parameters
-
+                                                                                                                                                               
 ### Hard filters 
 
 The hard filter parameter options apply blanket filters to the full set of reported EMOD infections. If you are interested in comparing the differences in genetic metrics from the total population for these individual groups, use the subpopulation options instead. 
@@ -78,7 +78,7 @@ This section defines with genetic metrics will be calculated for each set as boo
 
     - 'cotransmission_proportion': From polygenomic infections, calculates how many contain genomes from a single mosquito biting event. 
     - 'complexity_of_infection': Calculated both 'true_coi' for the number of genomes a person holds in an infection and the 'effective_coi' for the number of unique genomes a person hold in an infection as the upper detectable bound. 
-    - 'heterozygosity': For polygenomic infections, calculates how many positions contain more than one allele across genomes in an infection. Currently assumes all genotypes are captured, future plans include adding a density dependent weight to make this more realistic to specific strain parasitemia. 
+    - 'heterozygosity': Calculated as 1 - (p^2 + q^2), where p is the reference and q is the alternative allele.  Currently assumes all genotypes are captured, future plans include adding a density dependent weight to make this more realistic to specific strain parasitemia. 
     - 'identity_by_descent': Compares the pairwise Hamming distance for all genomes, defined by the parents at the start of the simulation, in specified infections at the population and/or the individual level. 
     - 'identity_by_state': Compares the pairwise Hamming distance for all genomes, defined by reference or alternative biallelic representations, in specified infections at the population and/or the individual level.
     - 'individual_ibx': Specification on whether or not to provide within sample relatedness for polygenomic infections. Will be set to True if Rh is specified. 
@@ -102,7 +102,7 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'cotx': Categorizes co-transmission events as infections with an effective COI > 2 with a single biting event (one unique value in 'bite_ids'). Monogenomic infections are excluded. 
 - '{sampling_name}_{n_samples}_rep{1...N replicates}': Columns specifying which sampling scheme the infection may be represented. Number of columns will match 'sampling' config options specified.
 - 'barcode_with_Ns': Barcode string for each infection. Polygenomic infections with any discordant alleles within any genome as assigned N at each discordant position.
-- 'heterozygosity': Proportion of barcode positions with an N.
+- 'heterozygosity': List of heterozygosity calculated as 1 - (p^2 + q^2), where p is the reference and q is the alternative allele for each variant position.
 - '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}: Individual infection relatedness for polygenomic infections
 - {sampling_name}_{n_samples}_rep{1...N replicates}-individual_inferred_rh: Individual level Rh comparisons for each sampling scheme. Provided as individual columns in case infections are sampled across different sampling frames. 
 

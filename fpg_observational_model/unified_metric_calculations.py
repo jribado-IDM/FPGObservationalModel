@@ -106,69 +106,46 @@ def comprehensive_group_summary(group):
     if len(group) == 0:
         return _empty_comprehensive_summary()
     
-    n = len(group)
-    
-    # Basic counts and proportions
-    poly_mask = group['true_coi'] > 1
-    poly_count = poly_mask.sum()
-    poly_prop = poly_count / n
-
-    # Basic counts and proportions
-    epoly_mask = group['effective_coi'] > 1
-    epoly_count = epoly_mask.sum()
-    epoly_prop = epoly_count / n
-
-    # Full COI statistics
+    # Monogenomics and polygenomics counts and COI stats
     true_coi_stats = _comprehensive_stats(group['true_coi'], 'true_coi')
     effective_coi_stats = _comprehensive_stats(group['effective_coi'], 'effective_coi')
 
     # Genome ID analysis
-    all_genome_stats = _analyze_genome_ids(group['recursive_nids_parsed'])
-    mono_genome_stats = _analyze_genome_ids(group[group['effective_coi'] == 1]['recursive_nids_parsed'])
+    all_genome_stats = _analyze_genome_ids(group['recursive_nids_parsed'], "all_genomes")
+    mono_genome_stats = _analyze_genome_ids(group[group['effective_coi'] == 1]['recursive_nids_parsed'], "mono_genomes")
     
     # Cotransmission and superinfection analysis
-    cotrans_stats = _analyze_binary_in_subset(group, poly_mask, 'cotx', poly_count)
-    
+    poly_series =  group[group['true_coi'] > 1]['cotx']
+    cotxn_counts = _analyze_binary_in_subset(poly_series, 'cotransmission')
+
     # Combine all stats
     result = pd.Series({
-        'n_infections': n,
-        'true_poly_coi_count': poly_count,
-        'true_poly_coi_prop': round(poly_prop, 3),
-        'effective_poly_coi_count': epoly_count, 
-        'effective_poly_coi_prop': round(epoly_prop, 3),
-        'all_genomes_total_count': all_genome_stats['total'],
-        'all_genomes_unique_count': all_genome_stats['unique'],
-        'all_genomes_unique_prop': round(all_genome_stats['unique_prop'], 3),
-        'mono_genomes_total_count': mono_genome_stats['total'],
-        'mono_genomes_unique_count': mono_genome_stats['unique'],
-        'mono_genomes_unique_prop': round(mono_genome_stats['unique_prop'], 3),
-        'cotransmission_count': cotrans_stats['count'],
-        'cotransmission_prop': round(cotrans_stats['prop'], 3),
+        'n_infections': len(group),
+        **true_coi_stats,
+        **effective_coi_stats,
+        **all_genome_stats,
+        **mono_genome_stats,
+        **cotxn_counts
     })
-
-    result = pd.concat([result, effective_coi_stats, true_coi_stats])
     
     if 'genotype_coi' in group.columns:
-        vpoly_mask = group['genotype_coi'] > 1
-        vpoly_count = vpoly_mask.sum()
-        vpoly_prop = vpoly_count / n
+        genotype_coi_stats = _comprehensive_stats(group['genotype_coi'], 'genotype_coi')
 
-        result.update({
-            'variant_poly_coi_count': vpoly_count,
-            'variant_poly_coi_prop': round(vpoly_prop, 3),
-        })
-
-        variant_coi_stats = _comprehensive_stats(group['genotype_coi'], 'genotype_coi')
-
-        result = pd.concat([result, effective_coi_stats, variant_coi_stats, true_coi_stats])
+        result = pd.concat([result, genotype_coi_stats])
 
     return result
 
 
 def _comprehensive_stats(series, prefix):
     """Calculate comprehensive statistics with given prefix."""
+    poly_mask = series > 1
+    count = poly_mask.sum()
+    prop  = round(count / len(series), 3)
+    
     stats = series.describe()
     return pd.Series({
+        f'{prefix}_poly_count': count,
+        f'{prefix}_poly_prop': round(prop, 3),
         f'{prefix}_mean': round(stats['mean'], 3),
         f'{prefix}_median': round(stats['50%'], 3),
         f'{prefix}_std': round(stats['std'], 3),
@@ -178,61 +155,55 @@ def _comprehensive_stats(series, prefix):
         f'{prefix}_q75': round(stats['75%'], 3)
     })
 
-def _analyze_genome_ids(genome_ids_series):
+def _analyze_binary_in_subset(series, prefix):
+    """Analyze binary column within a subset defined by mask."""
+    if len(series) == 0:
+        return {f'{prefix}_count': 0, f'{prefix}_prop': np.nan}
+    
+    mask = series == 1 
+    count = mask.sum()
+    prop = count / len(series)
+    
+    return {f'{prefix}_count': count, f'{prefix}_prop': prop}    
+
+
+def _analyze_genome_ids(series, prefix):
     """Analyze genome IDs to get total count, unique count, and proportion."""
     all_genome_ids = []
-    for sublist in genome_ids_series:
+    for sublist in series:
         if isinstance(sublist, list):
             all_genome_ids.extend(sublist)
     
-    total_genome = len(all_genome_ids)
-    unique_genome = len(set(all_genome_ids))
-    unique_prop = unique_genome / total_genome if total_genome > 0 else np.nan
+    total_genomes  = len(all_genome_ids)
+    unique_genomes = len(set(all_genome_ids))
+    unique_prop = round(unique_genomes / total_genomes, 3) if total_genomes > 0 else np.nan
     
     return {
-        'total': total_genome,
-        'unique': unique_genome,
-        'unique_prop': unique_prop
-    }
-
-def _analyze_binary_in_subset(group, mask, column, denominator):
-    """Analyze binary column within a subset defined by mask."""
-    if denominator == 0:
-        return {'count': 0, 'prop': np.nan}
-    
-    subset = group[mask]
-    count = subset[column].sum()
-    prop = count / denominator
-    
-    return {'count': count, 'prop': prop}
-
+        f'{prefix}_total': total_genomes,
+        f'{prefix}_unique': unique_genomes,
+        f'{prefix}_unique_prop': unique_prop
+        }
 
 def _empty_comprehensive_summary():
     """Return comprehensive summary with NaN/0 values for empty groups."""
     base_stats = {
         'n_infections': 0,
-        'true_poly_coi_count': 0,
-        'true_poly_coi_prop': np.nan,
-        'effective_poly_coi_count': 0,
-        'effective_poly_coi_prop': np.nan,
-        'genotype_poly_coi_count': 0,
-        'genotype_poly_coi_prop': np.nan,
-        'all_genome_total_count': 0,
-        'all_genome_unique_count': 0,
-        'all_genome_unique_prop': np.nan,
-        'mono_genome_total_count': 0,
-        'mono_genome_unique_count': 0,
-        'mono_genome_unique_prop': np.nan,
         'cotransmission_count': 0,
         'cotransmission_prop': np.nan,
     }
     
     # Add comprehensive stats for both COI measures
     for prefix in ['effective_coi', 'true_coi', 'genotype_coi']:
-        for stat in ['mean', 'median', 'std', 'min', 'max', 'q25', 'q75']:
+        for stat in ['poly_count', 'poly_prop', 'mean', 'median', 'std', 'min', 'max', 'q25', 'q75']:
             base_stats[f'{prefix}_{stat}'] = np.nan
+
+        for prefix in ['all_genomes', 'mono_genomes']:
+            for stat in ['total', 'unique', 'unique_prop']:
+                base_stats[f'{prefix}_{stat}'] = 0 if 'count' in stat else np.nan
+
     
     return pd.Series(base_stats)
+
 
 def get_variant_coi(matrix, indices):
     """Checks for unique genotype within an infection from the variant panel.
@@ -248,7 +219,7 @@ def get_variant_coi(matrix, indices):
         return unique_rows.shape[0]
 
     except Exception as e:
-        print(f"Error in generate_het_barcode: {e}")
+        print(f"Error in pulling genomes: {e}")
         return []    
 
 
@@ -713,7 +684,7 @@ def calculate_heterozygosity(maf):
         else:
             maf = np.array(maf)    
 
-        heterozygosity_func = lambda t: 1 - (t**2 + (1-t)**2)
+        heterozygosity_func = lambda t: round(1 - (t**2 + (1-t)**2), 4)
         vfunc = np.vectorize(heterozygosity_func)
         site_heterozygosity = vfunc(maf)
         
@@ -815,7 +786,6 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
         group_subset['fws'] = sampling_df['heterozygosity'].apply(calc_fws_for_sample)
 
         fws_summary = _comprehensive_stats(group_subset['fws'], 'fws')
-        print(fws_summary)
         
         fws_stats_list.append({
             'comparison_type': comparison_type,
