@@ -3,6 +3,7 @@ import numpy as np
 from itertools import combinations, chain
 from collections import Counter
 from scipy import stats
+from sklearn.linear_model import LinearRegression
 import idm, tskit
 
 #####################################################################################
@@ -168,13 +169,13 @@ def _comprehensive_stats(series, prefix):
     """Calculate comprehensive statistics with given prefix."""
     stats = series.describe()
     return pd.Series({
-        f'{prefix}_mean': stats['mean'],
-        f'{prefix}_median': stats['50%'],
-        f'{prefix}_std': stats['std'],
-        f'{prefix}_min': stats['min'],
-        f'{prefix}_max': stats['max'],
-        f'{prefix}_q25': stats['25%'],
-        f'{prefix}_q75': stats['75%']
+        f'{prefix}_mean': round(stats['mean'], 3),
+        f'{prefix}_median': round(stats['50%'], 3),
+        f'{prefix}_std': round(stats['std'], 3),
+        f'{prefix}_min': round(stats['min'], 3),
+        f'{prefix}_max': round(stats['max'], 3),
+        f'{prefix}_q25': round(stats['25%'], 3),
+        f'{prefix}_q75': round(stats['75%'], 3)
     })
 
 def _analyze_genome_ids(genome_ids_series):
@@ -205,6 +206,7 @@ def _analyze_binary_in_subset(group, mask, column, denominator):
     
     return {'count': count, 'prop': prop}
 
+
 def _empty_comprehensive_summary():
     """Return comprehensive summary with NaN/0 values for empty groups."""
     base_stats = {
@@ -213,8 +215,8 @@ def _empty_comprehensive_summary():
         'true_poly_coi_prop': np.nan,
         'effective_poly_coi_count': 0,
         'effective_poly_coi_prop': np.nan,
-        'variant_poly_coi_count': 0,
-        'variant_poly_coi_prop': np.nan,
+        'genotype_poly_coi_count': 0,
+        'genotype_poly_coi_prop': np.nan,
         'all_genome_total_count': 0,
         'all_genome_unique_count': 0,
         'all_genome_unique_prop': np.nan,
@@ -226,7 +228,7 @@ def _empty_comprehensive_summary():
     }
     
     # Add comprehensive stats for both COI measures
-    for prefix in ['effective_coi', 'true_coi']:
+    for prefix in ['effective_coi', 'true_coi', 'genotype_coi']:
         for stat in ['mean', 'median', 'std', 'min', 'max', 'q25', 'q75']:
             base_stats[f'{prefix}_{stat}'] = np.nan
     
@@ -704,6 +706,20 @@ save_ibx_distributions=True):
 #####################################################################################
 # Heterozygosity calculations
 #####################################################################################
+def calculate_heterozygosity(maf):
+        """Calculate heterozygosity for each locus in the genotype matrix."""
+        if maf.ndim == 2:
+            maf = np.sum(maf == 1, axis=0) / maf.shape[0]
+        else:
+            maf = np.array(maf)    
+
+        heterozygosity_func = lambda t: 1 - (t**2 + (1-t)**2)
+        vfunc = np.vectorize(heterozygosity_func)
+        site_heterozygosity = vfunc(maf)
+        
+        return site_heterozygosity
+
+
 def generate_het_barcode(matrix, indices):
     """Checks for unique alleles at each locus for a specified set of genotypes identified by indices.
     If all alleles are the same at a locus, returns '0' or '1' for that locus.
@@ -714,8 +730,9 @@ def generate_het_barcode(matrix, indices):
 
     TODO: Add option to account for densities to potentially mask polygenomic samples due to low density.
     """
+
     if len(indices) == 0:
-        return 0, []
+        return 0, [], []
     
     try:
         subset_matrix = matrix[indices, :]
@@ -731,84 +748,89 @@ def generate_het_barcode(matrix, indices):
             else:
                 barcode.append('N')
         
-        print(unique_rows.shape[0])
-        print(barcode)
-        return unique_rows.shape[0], barcode
+        het = calculate_heterozygosity(subset_matrix)
+        
+        return unique_rows.shape[0], barcode, het.tolist()
         
     except Exception as e:
         print(f"Error in generate_het_barcode: {e}")
-        return 0, []
+        return 0, [], []
 
 
-# In progress - alignment to allele frequency calculations without phased genotypes from real data
-def get_heterozygous_af(df, column_name = 'barcode_with_Ns'):
-    """
-    Convert a column of lists into a matrix and perform calculations.
-    
-    Parameters:
-    -----------
-    df : pandas DataFrame
-        Your dataframe
-    column_name : str
-        Name of the column containing lists
-    
-    Returns:
-    --------
-    results : list
-        List of calculated heterozygous proportions for each position and the allele frequencies at each position including heterozygous calls.
-    """
-    # Convert lists to matrix (each row becomes a row in the matrix)
-    matrix = np.array(df[column_name].tolist(), dtype=object)
-    matrix = np.where(matrix == 'N', np.nan, matrix).astype(float)
-    # Count of heterozygous positions (N) in the infections
-    heterozygous_counts = np.sum(np.isnan(matrix), axis=0)
-    heterozygous_proportions = np.round(heterozygous_counts / matrix.shape[0], 3)
-    # Calculate alternative allele frequencies (sum 1s / total non-heterozygous calls)
-    alternative_allele_counts = np.sum(matrix == 1, axis=0)
-    nonheterozygous_counts = matrix.shape[0] - heterozygous_counts
-    allele_frequencies = np.divide(
-        alternative_allele_counts, 
-        nonheterozygous_counts, 
-        out=np.zeros_like(alternative_allele_counts, dtype=float), 
-        where=nonheterozygous_counts != 0
-    )
-    allele_frequencies = np.round(allele_frequencies, 3)
-    
-    return heterozygous_proportions, allele_frequencies
-
-
-def process_nested_fws(nested_indices, sampling_df):
+def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
     fws_stats_list = []
     
     def add_fws_summary(indices, comparison_type, year_group, subgroup=None):
+
+        def calc_fws_for_sample(sample_het_list):
+            """
+            Calculate Fws for a single sample based on population heterozygosity.
+            
+            Mirrors logic from R package moimix used to calculate F_ws. Specifically following the logic in the function getFws() with this as the comment:
+
+            Compute the within host diversity statistic according to the method devised in  Manske et.al, 2012. Briefly, within sample heterozygosity and within population heterozygosity are computed and assigned to ten equal sized MAF bins [0.0.05]...[0.45,0.5]. For each bin the mean within sample and population heterozygosity is computed. A regression line of these values through the origin is computed for each sample. The \eqn{Fws} is then \eqn{1 - \beta}.
+            
+            Manske, Magnus, et al. "Analysis of Plasmodium falciparum diversity in natural infections by deep sequencing." Nature 487.7407 (2012): 375-379.
+            """
+            sample_het = np.array(sample_het_list)
+        
+            # Calculate mean sample heterozygosity per bin
+            sample_het_by_bin = pd.Series(sample_het).groupby(maf_bins).mean()
+        
+            # Align and remove NaNs
+            combined = pd.DataFrame({
+                'pop_het': group_het_by_bin,
+                'sample_het': sample_het_by_bin
+            }).dropna()
+        
+            if len(combined) == 0:
+                return np.nan
+        
+            # Linear regression through origin
+            X = combined['pop_het'].values.reshape(-1, 1)
+            y = combined['sample_het'].values
+        
+            model = LinearRegression(fit_intercept=False)
+            model.fit(X, y)
+        
+            slope = model.coef_[0]
+            fws = round(1 - slope, 3)
+    
+            return fws
+        
         group_subset = sampling_df[sampling_df['infIndex'].isin(indices)]
+        
+        genome_indices = []
+        for idx_list in group_subset['recursive_nids_parsed']:
+            if isinstance(idx_list, list):
+                genome_indices.extend(idx_list)
 
-        group_het, group_af = get_heterozygous_af(group_subset[group_subset['infIndex'].isin(indices)], column_name='barcode_with_Ns')
-        group_het_mean = np.mean(group_het)
-        group_subset['fws'] = group_subset['heterozygosity']/group_het_mean if group_het_mean != 0 else np.nan
+        matrix = get_matrix(ibs_matrix)[genome_indices, :]
+        group_af  = np.sum(matrix == 1, axis=0) / matrix.shape[0]
+        group_het = calculate_heterozygosity(matrix)
 
-        fws_mean = group_subset['fws'].mean()
-        fws_median = group_subset['fws'].median()
-        fws_std = group_subset['fws'].std()
+        maf_bins = pd.cut(group_het, bins=np.linspace(0, 0.5, 11), labels=False) + 1 
+        group_het_by_bin = pd.Series(group_het).groupby(maf_bins).mean()
+
+        group_subset['fws'] = sampling_df['heterozygosity'].apply(calc_fws_for_sample)
+
+        fws_summary = _comprehensive_stats(group_subset['fws'], 'fws')
+        print(fws_summary)
         
         fws_stats_list.append({
             'comparison_type': comparison_type,
             'year_group': str(year_group),
             'subgroup': str(subgroup) if subgroup is not None else None,
-            'heterozygosity_mean': round(group_het_mean, 3),
-            'heterozygosity_per_position': group_het.tolist(),
-            'heterozygosity_allele_frequencies': group_af.tolist(),
-            'fws_mean': round(fws_mean, 3),
-            'fws_median': round(fws_median, 3),
-            'fws_std': round(fws_std, 3)
+            'allele_frequencies': np.round(group_af, 3).tolist(),
+            'heterozygosity_per_position': np.round(group_het, 3).tolist(),
+            **fws_summary.to_dict() 
         })
     
     for comparison_type, data in nested_indices.items():
         if comparison_type in ['group_year', 'group_month']:
             for key, indices in data.items():
                 if isinstance(key, tuple):
-                    year_group = f"{key[0]}_{key[1]}" if comparison_type == 'group_month' else str(key[0])
-                    
+                    year_group = f"{key[0]}_{key[1]}" if comparison_type == 'group_month' else str(key[0])                    
                     add_fws_summary(indices, comparison_type, year_group)
             
                 else:
