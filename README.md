@@ -114,8 +114,8 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'year_group': Specifies the year (either simulation year or intervention shifted year) or the seasonal grouping bin for summary statistics.
 - 'sub_group': Sepcifies the additional groupings within subpopulations, e.g. whether True/False for polygenomic or symptomatic.  
 - 'n_infections': Counts for the number of infections in each sampling scheme, for each year and subpopulation grouping specified in the observational model run. These are the actual number of infections that were available in the report by grouping and may be lower than the specified targets.
-- '{true/effective}_poly_coi_count': The number of infections per grouping that have a COI > 2. True is the modeled umber of genomes tracked, which effective is the number of unique and detectable genomes in an infection.
-- '{true/effective_poly_coi_prop}': The proportion of infections per grouping that have a COI > 2. Calculated as '{true/effective}_poly_coi_count'/n_infections.
+- '{true/effective/genotype}_poly_coi_count': The number of infections per grouping that have a COI > 2. True is the modeled number of genomes tracked, which effective is the number of unique and detectable genomes in an infection by ancestry, and genome is the number of unique detectable genomes in an infection by bi-allelic representation.
+- '{true/effective/genotype_poly_coi_prop}': The proportion of infections per grouping that have a COI > 2. Calculated as '{true/effective/genotype}_poly_coi_count'/n_infections.
 - 'all_genomes_total_count': The total number of genomes identified in all infections per grouping, assuming full phasing of all infection genomes. 
 - 'all_genomes_unique_count': The total number of genomes observed once in all genomes from infections per grouping, assuming full phasing of all infection genomes.
 - 'all_genomes_ids_unique_prop': The proportion of unique genomes in all genomes from infections per grouping, assuming full phasing of all infection genomes. Calculated as 'all_genomes_unique_count'/'all_genomes_total_count'.
@@ -124,8 +124,11 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'mono_genomes_ids_unique_prop': The proportion of unique genomes in all genomes from infections per grouping, measured only from monogenomic infections that are inherently phased. Calculated as 'mono_genomes_unique_count'/'mono_genomes_total_count'.
 - 'cotransmission_count': The number of infections per grouping with a COI > 2 and from a single mosquito biting event. 
 - 'cotransmission_prop': The proportion of co-transmission infections within polygenomic infections. Calculated as 'cotransmission_count'/'effective_poly_coi_count'.
-- '{true/effective}_coi_{mean,median,std,min,q25,75,max}': Full summary statistics for the COI distribution of infections in a grouping. 
-- '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}': Full population level summary statistics for the COI distribution of infections in a grouping.
+- '{true/effective/genotype}_coi_{mean,median,std,min,q25,75,max}': Full summary statistics for the COI distribution of infections in a grouping. 
+- '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}': Full population level summary statistics for the relatedness distribution of infections in a grouping.
+- 'allele_frequencies': List of the alternative allele frequency in infections for all phased genomes from infections per grouping.
+- 'heterozygosity_per_position': Heterozygosity calculated for all phased genomes from infections per grouping. Assumption that each allele in the infection is proportional to the the number of strains containing that genotype (i.e. each genome produces a single read count per infection for each allele, and total read counts are the sum of the genomes in the infection). 
+- 'fws_{pairwise_count,mean,median,std,min,q25,75,max}': Summary statistics for within host diversity (F_ws) according to the method devised in  Manske et.al, 2012. 
 - 'rh_inferred_{mean,median,std}': Summary statistics for the inferred Rh from polygenomic infections, bootstrapping the monogenomic Rh. 
 
 
