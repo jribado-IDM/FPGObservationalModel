@@ -105,6 +105,8 @@ In both cases, you will get a `ObsModel_rocky.sif` file in the current directory
 ### 1. Using Comps (Recommended for Comps Users)
 
 If you have access to Comps, you can push your Singularity image as an asset for easy distribution and version control.
+If you don't need to change the image, you can directly use the pre-built Singularity image available on Comps with
+the asset ID stored in ['ObsModel_rocky.id'](ObsModel_rocky.id).
 > [!NOTE]
 > You need to install idmtools and idmtools_platform_comps packages in your Python environment and have Comps access
 > to use the script below. Run the following command to install the required packages if you haven't done so:
