@@ -606,7 +606,7 @@ class TestNestedComparisonDictionary(unittest.TestCase):
             'age_bins': 'age_bin'
         }
         for subgroup in mappings.keys():
-            subgroup_dict = self.df.groupby(['group_year', mappings[subgroup]])['infIndex'].apply(list).to_dict()
+            subgroup_dict = self.df.groupby(['group_year', mappings[subgroup]], observed=True)['infIndex'].apply(list).to_dict()
             
             self.assertEqual(subgroup_dict, result[subgroup])
   
