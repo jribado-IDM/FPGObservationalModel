@@ -31,20 +31,21 @@ def get_matrix(name):
 # Group identification for calculations
 #####################################################################################
 def identify_nested_comparisons(df, sampling_column_name, 
-    config = None, 
-    add_monthly=False):
+    config = None):
     """
     Generate a list of infections within sampling schemes for looping through nested comparisons. 
     """
     nested_indices = {}
 
+    print("Here 1:")
+    print("samp")
     # Specifying time groups
     if 'seasonal' not in sampling_column_name:
-        time_group = "group_year"
+        if 'month' in sampling_column_name:
+            time_group = 'group_month'
+        else:
+            time_group = 'group_year'    
         nested_indices[time_group] = df.groupby(time_group)['infIndex'].apply(list).to_dict()
-
-        if add_monthly:
-            nested_indices['group_month'] = df.groupby([time_group, 'group_month'])['infIndex'].apply(list).to_dict()         
 
     if 'seasonal' in sampling_column_name: 
         time_group = sampling_column_name
@@ -62,7 +63,7 @@ def identify_nested_comparisons(df, sampling_column_name,
     # Specifying non-time groups; i.e. subgroups 
     if 'age' not in sampling_column_name and config is not None:
         if config.get('populations', False):
-            if len(df['population'].unique()) > 1:  # FIXED: added len()
+            if len(df['population'].unique()) > 1:  
                 nested_indices['populations'] = df.groupby([time_group, 'population'])['infIndex'].apply(list).to_dict()
             else:
                 print("User specified nested comparisons by population, but only one population is available.")
@@ -342,20 +343,21 @@ def process_nested_summaries(nested_indices, sampling_df, comprehensive_group_su
             
         summary_dict.update({
             'comparison_type': comparison_type,
-            'year_group': str(year_group),
+            'year_group': str(year_group) if 'group_year' in comparison_type else None,
+            'month_group': str(year_group) if 'group_month' in comparison_type else None,
             'subgroup': str(subgroup) if subgroup is not None else None
         })
         summary_stats_list.append(summary_dict)
     
     for comparison_type, data in nested_indices.items():
-        if comparison_type in ['group_year', 'group_month']:
+        if comparison_type == 'group_year':
             for key, indices in data.items():
                 if isinstance(key, tuple):
-                    year_group = f"{key[0]}_{key[1]}" if comparison_type == 'group_month' else str(key[0])
-                    add_summary(indices, comparison_type, year_group)
+                     year_group = f"{key[0]}_{key[1]}" if comparison_type == 'group_month' else str(key[0])
+                     add_summary(indices, comparison_type, year_group)
                 else:
                     add_summary(indices, comparison_type, str(key))
-        elif comparison_type.startswith('seasonal'):
+        elif comparison_type.startswith('seasonal') or comparison_type == 'group_month':
             for key, indices in data.items():
                 add_summary(indices, comparison_type, str(key))
         else:
@@ -413,6 +415,9 @@ save_pairwise_ibx=False):
 
     if 'group_year' in nested_indices.keys():
         all_year_indices = nested_indices['group_year']
+
+    if 'group_month' in nested_indices.keys():
+        all_year_indices = nested_indices['group_month']    
 
     if 'season_bins' in nested_indices.keys():
         all_year_indices = nested_indices['season_bins']
@@ -522,7 +527,6 @@ save_pairwise_ibx=False):
 
 def run_time_summaries(sample_df,
 subpop_config = None,
-add_monthly = False, 
 user_ibx_categories = None,
 individual_ibx_calculation=True,
 fws_calculation=True,
@@ -540,7 +544,7 @@ save_ibx_distributions=True):
     for sampling_column in sampling_columns:
         sampling_df = df[df[sampling_column].notna()]
 
-        nested_dict = identify_nested_comparisons(sampling_df, sampling_column, config = subpop_config, add_monthly=add_monthly)
+        nested_dict = identify_nested_comparisons(sampling_df, sampling_column, config = subpop_config)
         print(f"Nested comparisons for {sampling_column}: {list(nested_dict.keys())}")
 
         # Get base summary statistics
@@ -551,11 +555,14 @@ save_ibx_distributions=True):
         if fws_calculation:
             fws_stats = process_nested_fws(nested_dict, sampling_df)
             if not fws_stats.empty:
-                summary_stats = summary_stats.merge(fws_stats, on=['comparison_type', 'year_group', 'subgroup'], how='left')
+                columns = ['comparison_type', 'year_group', 'month_group', 'subgroup']
+                merge_cols = [col for col in columns if col in fws_stats.columns]
+                summary_stats = summary_stats.merge(fws_stats, on=merge_cols, how='left')
             else:
                 print(f"Warning: No Fws stats generated for {sampling_column}")
 
         # Process IBx categories if they exist
+        nested_dict_no_month = {k:v for k,v in nested_dict.items() if k != 'group_month'}.copy()
         if user_ibx_categories and len(user_ibx_categories) > 0: 
             for ibx_category in user_ibx_categories:
                 ibx_dist_dict = {}
@@ -564,7 +571,7 @@ save_ibx_distributions=True):
                     ibx_summary, ibx_inf, ibx_dist_dict = process_nested_ibx(
                         sampling_df,  
                         f'{ibx_category}_matrix', 
-                        nested_dict, 
+                        nested_dict_no_month, 
                         ibx_prefix=ibx_category,
                         individual_ibx_calculation=individual_ibx_calculation,
                         save_ibx_distributions=save_ibx_distributions
@@ -736,6 +743,8 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
     # Get year-level indices (same as process_nested_ibx)
     if 'group_year' in nested_indices.keys():
         all_year_indices = nested_indices['group_year']
+    if 'group_month' in nested_indices.keys():
+        all_year_indices = nested_indices['group_month']    
     elif 'season_bins' in nested_indices.keys():
         all_year_indices = nested_indices['season_bins']
     else:
@@ -787,7 +796,7 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
         
         # Process year-level and nested groups
         for comparison_type, group_data in nested_indices.items():
-            if comparison_type in ['group_year', 'season_bins']:
+            if comparison_type in ['group_year', 'group_month','season_bins']:
                 # Year-level calculation
                 year_subset = year_subset.copy()
                 year_subset['fws'] = year_subset['heterozygosity'].apply(calc_fws_for_sample)
@@ -797,7 +806,8 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                     fws_summary = _comprehensive_stats(valid_fws, 'fws')
                     fws_stats_list.append({
                         'comparison_type': comparison_type,
-                        'year_group': year,
+                        'year_group': str(year) if 'group_year' in comparison_type else None,
+                        'month_group': str(year) if 'group_month' in comparison_type else None,
                         'subgroup': None,
                         'allele_frequencies': np.round(group_af, 3).tolist(),
                         'heterozygosity_per_position': np.round(group_het, 3).tolist(),
@@ -847,14 +857,15 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                                             except:
                                                 return np.nan
                                         
-                                        subset_df['fws'] = subset_df['heterozygosity'].apply(calc_fws_subgroup)
+                                        subset_df['fws'] = subset_df['heterozygosity'].apply(calc_fws_subgroup).copy()
                                         valid_fws = subset_df['fws'].dropna()
                                         
                                         if len(valid_fws) > 0:
                                             fws_summary = _comprehensive_stats(valid_fws, 'fws')
                                             fws_stats_list.append({
                                                 'comparison_type': comparison_type,
-                                                'year_group': year,
+                                                'year_group': str(year) if 'group_year' in comparison_type else None,
+                                                'month_group': str(year) if 'group_month' in comparison_type else None,
                                                 'subgroup': str(subgroup),
                                                 'allele_frequencies': np.round(subgroup_af, 3).tolist(),
                                                 'heterozygosity_per_position': np.round(subgroup_het, 3).tolist(),

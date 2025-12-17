@@ -206,7 +206,7 @@ class SharedTestData:
                     'unique_genome_proportion': True
                 },
                 'subpopulation_comparisons': {
-                    'add_monthly': False,
+                    'add_monthly': True,
                     'populations': True,
                     'polygenomic': True,
                     'symptomatic': True,
@@ -1130,8 +1130,10 @@ class TestRunTimeSummaries(unittest.TestCase):
     
     def setUp(self):
         self.df = TEST_DATA.get_infection_df(with_metrics=True)
+        self.df['group_month'] = self.df['continuous_month']
         
         # Add sampling columns
+        self.df['month_rep0'] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
         self.df['random_5_rep1'] = [1, np.nan, 1, np.nan, 1, 1, np.nan, 1, np.nan, 1]
         self.df['random_5_rep2'] = [np.nan, 1, 1, 1, np.nan, 1, 1, np.nan, 1, np.nan]
         
@@ -1157,6 +1159,8 @@ class TestRunTimeSummaries(unittest.TestCase):
                 rh_calculation=False
             )
             
+            print(summaries)
+
             self.assertIsInstance(summaries, pd.DataFrame)
             self.assertGreater(len(summaries), 0)
             

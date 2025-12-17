@@ -688,8 +688,8 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
 
         df_filtered['group_year'] = df_filtered['intervention_year'].copy() if 'intervention_year' in df_filtered.columns else df['simulation_year'].copy()
         if config['subpopulation_comparisons'].get('add_monthly'):
-            df_filtered['group_month'] = df_filtered['intervention_month'].copy() if 'intervention_month' in df_filtered.columns else df['continuous_month'].copy()
-        
+            df_filtered['group_month'] = df_filtered['intervention_month'].copy() if 'intervention_month' in df_filtered.columns else df['continuous_month'].copy() 
+
         # Step 2: Calculate infection metrics
         if verbose:
             print("\n=== Step 2: Calculate individual infection metrics ===")
@@ -701,7 +701,8 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
         
         # Start with the base dataframe
         final_df = df_metrics.copy()
-        
+
+
         # Apply each sampling method
         for sampling_name, sampling_config in config['sampling_configs'].items():
             if verbose:
@@ -709,21 +710,31 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
             
             # Run the sampling method
             sampled_df = run_sampling_functions(df_metrics, sampling_config)
+
+            if config['subpopulation_comparisons'].get('add_monthly'):
+                sampled_df['month_rep0'] = 1 
             
             # Merge the sampling columns back to the main dataframe
             sampling_columns = [col for col in sampled_df.columns 
                               if sampling_name in col and 'rep' in col]
+            
             for col in sampling_columns:
                 final_df[col] = sampled_df[col]
         
+        if config['subpopulation_comparisons'].get('add_monthly'):
+            final_df['month_rep0'] = 1  # All infections included for monthly analysis
+            print("Added 'month_rep0' column for monthly subpopulation comparisons")
+        
+
         # Final summary
         if verbose:
             print(f"\n=== Final Results ===")
             print(f"Final dataframe shape: {final_df.shape}")
+            print(final_df.head(3))
             
             # Show sampling column summary
             sampling_cols = [col for col in final_df.columns 
-                            if any(method in col for method in ['random', 'seasonal', 'age']) and 'rep' in col]
+                            if any(method in col for method in ['random', 'seasonal', 'age', 'month']) and 'rep' in col]
             print(f"Sampling columns created: {sampling_cols}")
             
             for col in sampling_cols:
