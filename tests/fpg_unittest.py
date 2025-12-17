@@ -571,6 +571,15 @@ class TestNestedComparisonDictionary(unittest.TestCase):
     
     def setUp(self):
         self.df = TEST_DATA.get_infection_df(with_metrics=True)
+        
+        # Add columns for subgroup comparisons - same calculation as nested comparisons function
+        self.df['is_polygenomic'] = self.df['effective_coi'].apply(lambda x: True if x > 1 else False)
+
+        days_per_year = 365.25
+        age_bins = [0, int(days_per_year * 5), int(days_per_year * 15), int(self.df['age_day'].max() + 1)]
+        age_bin_labels = ['0-5yrs', '5-15yrs', '15+yrs']     
+        self.df['age_bin'] = pd.cut(self.df['age_day'], bins=age_bins, labels=age_bin_labels, include_lowest=True)    
+
         self.config = TEST_DATA.get_config()['subpopulation_comparisons']
         
     def test_identify_nested_comparisons_basic(self):
