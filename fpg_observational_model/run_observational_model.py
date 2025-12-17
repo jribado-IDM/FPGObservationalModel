@@ -185,7 +185,8 @@ def update_matrix_indices(sample_df):
     
     # Parse the recursive_nid column
     df['original_nid'] = df['recursive_nid'].copy()
-    df['original_nid'] = df['original_nid'].apply(ast.literal_eval)
+    df['original_nid'] = df['original_nid'].apply(
+    lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
     # Step 1: Get all unique recursive_nid values across all rows
     all_nids = []
@@ -344,11 +345,8 @@ def run_observational_model(
 
     if config['metrics'].get('heterozygosity', True) and ibs_matrix is not None:
         # Generate barcode with Ns for heterozygosity calculations
-        sample_df[['genotype_coi', 'barcode_with_Ns']] = sample_df.apply(lambda row: generate_het_barcode(ibs_matrix, row['recursive_nid']), axis=1, result_type='expand')
-
-        sample_df['heterozygosity'] = sample_df['barcode_with_Ns'].apply(
-            lambda x: x.count('N')/len(x) if isinstance(x, list) and len(x) > 0 else 0
-        )
+        sample_df['original_nid'] = sample_df['original_nid'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        sample_df[['genotype_coi', 'barcode_with_Ns', 'heterozygosity']] = sample_df.apply(lambda row: generate_het_barcode(ibs_matrix, row['original_nid']), axis=1, result_type='expand')
 
     # Run metric calculations
     all_summaries, all_infection_ibx, all_ibx_dist_dict = run_time_summaries(

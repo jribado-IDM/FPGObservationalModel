@@ -61,21 +61,21 @@ def calculate_infection_metrics(df):
     df = df.copy()
     
     # Step 2: Parse genome_ids and calculate COI
-    df["recursive_nids_parsed"] = df["recursive_nid"].apply(parse_list)
-    df["true_coi"] = df["recursive_nids_parsed"].apply(len)
-    df["effective_coi"] = df["recursive_nids_parsed"].apply(lambda x: len(set(x)))
+    df["original_nid"] = df["recursive_nid"].apply(parse_list)
+    df["true_coi"] = df["original_nid"].apply(len)
+    df["effective_coi"] = df["original_nid"].apply(lambda x: len(set(x)))
     # Keep only the single identifiable genome ids per infections
     # Consideration for future expansion, for effective COI > 1, keep density information for both to use in heterozygosity calculations
-    df["recursive_nids_parsed"] = df["recursive_nids_parsed"].apply(lambda x: list(set(x)))
+    df["recursive_nid"] = df["original_nid"].apply(lambda x: list(set(x)))
     
     # Step 3: Parse bite_ids for cotransmission
-    df["bite_ids_parsed"] = df["bite_ids"].apply(parse_list)
+    df["bite_ids"] = df["bite_ids"].apply(parse_list)
     
     # Step 4: Calculate cotransmission (cotx)
     def calc_cotx(row):
         if row['effective_coi'] == 1:
             return None  # NA for monogenomic
-        elif len(set(row['bite_ids_parsed'])) == 1:
+        elif len(set(row['bite_ids'])) == 1:
             return True  # Single bite event = cotransmission
         else:
             return False  # Multiple bite events = superinfection
