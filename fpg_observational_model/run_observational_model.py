@@ -311,8 +311,12 @@ def run_observational_model(
         intervention_start_month = config['intervention_start_month']
     )
     sample_df = extract_sampled_infections(sample_df)
-    sample_df = update_matrix_indices(sample_df)
-
+    sample_df['original_nid'] = sample_df['recursive_nid'].copy()
+    
+    # NOTE: Commented out to preserve original_nid without changing recursive_nid. In theory this updated index can be used to read in smaller genotype matrix below of infections sampled across all sampling schemes. Will require changes to functions that use the original_nid to map genomes to infections. 
+    # sample_df = update_matrix_indices(sample_df)
+    # matrix_indices = sample_df['recursive_nid'].tolist()
+ 
     # Identify additional file for metric calculations - mainly IBx
     # Memory-map the genotype files (doesn't load to RAM) for access later
     user_specified_ibx = []
