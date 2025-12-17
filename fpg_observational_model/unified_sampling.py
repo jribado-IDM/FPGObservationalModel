@@ -730,7 +730,6 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
         if verbose:
             print(f"\n=== Final Results ===")
             print(f"Final dataframe shape: {final_df.shape}")
-            print(final_df.head(3))
             
             # Show sampling column summary
             sampling_cols = [col for col in final_df.columns 

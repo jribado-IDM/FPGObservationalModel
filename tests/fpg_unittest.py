@@ -2,12 +2,12 @@
 Self-contained test suite using Python's built-in unittest (no pytest needed).
 All test data (dataframes and matrices) are generated within this file.
 
-Run with: python test_infection_sampling_unittest.py
-Or: python -m unittest test_infection_sampling_unittest -v
+Run with: python fpg_unittest.py
+Or: python -m unittest fpg_unittest -v
 
-This test suite covers key functions from fpg_observational_model.unified_sampling.py and unified_metric_calculations.py.
+This test suite covers key functions from fpg_observational_model.unified_sampling.py,
+unified_metric_calculations.py, and run_observational_model.py.
 
-AI generated on 2025-11 by Claude, based on user-provided context and reviewed for accuracy.
 """
 
 import os
@@ -18,8 +18,12 @@ import numpy as np
 import ast
 import sys
 import random
+import json
+import tempfile
+import shutil
 from itertools import combinations
 from collections import Counter
+from unittest.mock import patch, MagicMock, mock_open
 
 # Declare TEST_DATA at module level - will be initialized after class definition
 TEST_DATA = None
@@ -51,6 +55,7 @@ try:
         convert_month,
         adjust_time_columns
     )
+
     SAMPLING_IMPORTED = True
 except ImportError as e:
     print(f"Warning: Could not import unified_sampling: {e}")
@@ -72,9 +77,11 @@ try:
         identify_nested_comparisons,
         process_nested_summaries,
         process_nested_ibx,
+        process_nested_fws,
         run_time_summaries,
         update_ibx_index,
     )
+
     METRICS_IMPORTED = True
 except ImportError as e:
     print(f"Warning: Could not import unified_metric_calculations: {e}")
@@ -84,12 +91,24 @@ try:
     from fpg_observational_model.run_observational_model import (
         extract_sampled_infections,
         update_matrix_indices
-    )
+    )    
     HELPER_IMPORTED = True
 except ImportError as e:
     print(f"Warning: Could not import unified_metric_calculations: {e}")
     HELPER_IMPORTED = False
 
+
+try:
+    from run_observational_model import (
+        run_observational_model,
+        get_default_config,
+        process_file
+    )
+
+    RUN_MODEL_IMPORTED = True
+except ImportError as e:
+    print(f"Warning: Could not import run_observational_model: {e}")
+    RUN_MODEL_IMPORTED = False    
 
 
 ###############################################################################
@@ -99,12 +118,12 @@ class SharedTestData:
     """Singleton class to hold shared test data across all test classes"""
     _instance = None
     _initialized = False
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(SharedTestData, cls).__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         if not SharedTestData._initialized:
             # Create base infection dataframe
@@ -124,7 +143,7 @@ class SharedTestData:
                 'genome_ids': ['[101]', '[101]', '[102, 103]', '[104]', '[105, 106, 107]', '[108]', '[109]', '[110]', '[111, 111]', '[112, 113]'],
                 'bite_ids': ['[1]', '[2]', '[3, 3]', '[4]', '[5, 6, 6]', '[7, 7]', '[8]', '[8]', '[9, 10]', '[11,11]']
             })
-            
+
             # Create genotype matrix (IBS)
             # Deprecated - added a more specific pattern for better tests 
             # np.random.seed(42)
@@ -213,47 +232,47 @@ class SharedTestData:
                     'age_bins': True
                 }
             }
-            
+
             # Monogenomic IBS distribution for R_h tests
             self.monogenomic_dict = {
-                0.1: 2, 0.2: 5, 0.3: 8, 0.4: 10, 
-                0.5: 12, 0.6: 8, 0.7: 5, 0.8: 3, 
+                0.1: 2, 0.2: 5, 0.3: 8, 0.4: 10,
+                0.5: 12, 0.6: 8, 0.7: 5, 0.8: 3,
                 0.9: 2, 1.0: 5
             }
-            
+
             SharedTestData._initialized = True
-    
+
     def get_infection_df(self, with_metrics=False):
         """Get a copy of the infection dataframe, optionally with metrics calculated"""
         df = self.base_infection_df.copy()
-        
+
         if with_metrics and SAMPLING_IMPORTED:
             df = calculate_infection_metrics(df)
-        
+
         return df
-    
+
     def get_genotype_matrix(self):
         """Get a copy of the genotype matrix"""
         return self.genotype_matrix.copy()
-    
+
     def get_ibd_matrix(self):
         """Get a copy of the IBD matrix"""
         return self.ibd_matrix.copy()
-    
+
     def get_config(self):
         """Get a copy of the standard config"""
         import copy
         return copy.deepcopy(self.config)
-    
+
     def get_monogenomic_dict(self):
         """Get a copy of the monogenomic IBS distribution"""
         return self.monogenomic_dict.copy()
 
 
 # Initialize TEST_DATA at module level (NO INDENTATION)
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("INITIALIZING SHARED TEST DATA")
-print("="*70)
+print("=" * 70)
 
 try:
     TEST_DATA = SharedTestData()
@@ -264,10 +283,11 @@ try:
 except Exception as e:
     print(f"✗ ERROR initializing TEST_DATA: {e}")
     import traceback
+
     traceback.print_exc()
     TEST_DATA = None
 
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
 
 ###############################################################################
@@ -276,7 +296,7 @@ print("="*70 + "\n")
 @unittest.skipIf(not SAMPLING_IMPORTED, "unified_sampling not available")
 class TestApplyEmodFilters(unittest.TestCase):
     """Test apply_emod_filters function"""
-    
+
     def setUp(self):
         """Use shared test data with metrics"""
         self.df = TEST_DATA.get_infection_df(with_metrics=True)
@@ -292,15 +312,13 @@ class TestApplyEmodFilters(unittest.TestCase):
     def test_fever_filter_true(self):
         """Test filtering for fever cases"""
         result = apply_emod_filters(self.df, fever_filter=True)
-        
+
         self.assertTrue(all(result['fever_status'] == 1))
         self.assertLessEqual(len(result), len(self.df))
-    
+
     def test_monogenomic_filter(self):
         """Test monogenomic filtering"""
         result = apply_emod_filters(self.df, monogenomic_filter=True)
-        print(result)
-        
         mono_only = result[result['effective_coi'] == 1]
         poly_remaining = result[result['effective_coi'] > 1]
         
@@ -568,7 +586,7 @@ class TestSubsampleFilter(unittest.TestCase):
 @unittest.skipIf(not METRICS_IMPORTED, "unified_metric_calculations not available")
 class TestNestedComparisonDictionary(unittest.TestCase):
     """Test identify_nested_comparisons function"""
-    
+
     def setUp(self):
         self.df = TEST_DATA.get_infection_df(with_metrics=True)
         
@@ -587,10 +605,10 @@ class TestNestedComparisonDictionary(unittest.TestCase):
 
         sampling_col = 'random_5_rep1'
         self.df[sampling_col] = 1
-        
+
         result = identify_nested_comparisons(
-            self.df, 
-            sampling_col, 
+            self.df,
+            sampling_col,
             config=self.config
         )
         
@@ -611,6 +629,374 @@ class TestNestedComparisonDictionary(unittest.TestCase):
             self.assertEqual(subgroup_dict, result[subgroup])
   
 
+###############################################################################
+# NEW TESTS FOR run_observational_model
+###############################################################################
+@unittest.skipIf(not RUN_MODEL_IMPORTED, "run_observational_model not available")
+class TestRunObservationalModel(unittest.TestCase):
+    """Test suite for run_observational_model function updates"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        # Create temporary directories for test outputs
+        self.test_dir = tempfile.mkdtemp()
+        self.config_dir = tempfile.mkdtemp()
+
+        # Use shared test data
+        self.test_infection_df = TEST_DATA.get_infection_df(with_metrics=False)
+
+    def tearDown(self):
+        """Clean up test fixtures"""
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+        shutil.rmtree(self.config_dir, ignore_errors=True)
+
+    # ==================== Test 1: Default config usage ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('pandas.read_csv')
+    def test_default_config_when_no_config_provided(self, mock_read_csv, mock_summaries, mock_sampling):
+        """Test that default config is used when neither config_path nor config is provided"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        # Run without config
+        with patch('builtins.print') as mock_print:
+            run_observational_model(
+                sim_name='test_default',
+                emod_output_path=self.test_dir,
+                output_path=self.test_dir,
+                verbose=True
+            )
+
+            # Check that using default config message was printed
+            print_calls = [str(call) for call in mock_print.call_args_list]
+            self.assertTrue(any('using default config' in str(call).lower() for call in print_calls))
+
+    # ==================== Test 2: Config file loading ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('pandas.read_csv')
+    def test_config_file_loading(self, mock_read_csv, mock_summaries, mock_sampling):
+        """Test loading config from file"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        # Create test config file
+        test_config = {
+            'intervention_start_month': 50,  # default is 29
+            'metrics': {
+                'heterozygosity': False      # default is True
+            }
+        }
+        config_path = os.path.join(self.config_dir, 'test_config.json')
+        with open(config_path, 'w') as f:
+            json.dump(test_config, f)
+
+        # Run with config file
+        with patch('builtins.print') as mock_print:
+            run_observational_modelrun_observational_model(
+                sim_name='test_file',
+                emod_output_path=self.test_dir,
+                config_path=config_path,
+                output_path=self.test_dir,
+                verbose=True
+            )
+
+            # Check that config was loaded
+            print_calls = [str(call) for call in mock_print.call_args_list]
+            self.assertTrue(any('Loaded config from' in str(call) for call in print_calls))
+
+    # ==================== Test 3: Config dictionary ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('pandas.read_csv')
+    def test_config_dictionary_usage(self, mock_read_csv, mock_summaries, mock_sampling):
+        """Test using config dictionary directly"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        # Create test config dictionary
+        test_config = {
+            'intervention_start_month': 36,
+            'sampling_configs': {
+                'random': {
+                    'n_samples_year': 200
+                }
+            }
+        }
+
+        # Run with config dictionary
+        with patch('builtins.print') as mock_print:
+            run_observational_model(
+                sim_name='test_dict',
+                emod_output_path=self.test_dir,
+                config=test_config,
+                output_path=self.test_dir,
+                verbose=True
+            )
+
+            # Check that dictionary config message was printed
+            print_calls = [str(call) for call in mock_print.call_args_list]
+            self.assertTrue(any('provided config dictionary' in str(call).lower() for call in print_calls))
+
+    # ==================== Test 4: Partial config merge ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('run_observational_model.get_default_config')
+    @patch('pandas.read_csv')
+    def test_partial_config_merges_with_defaults(self, mock_read_csv, mock_default, mock_summaries, mock_sampling):
+        """Test that partial config is merged with defaults"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        default_config = TEST_DATA.get_config()
+        mock_default.return_value = default_config
+
+        # Partial config - only override one value
+        partial_config = {
+            'intervention_start_month': 50
+        }
+
+        # Capture the config passed to sampling model
+        captured_config = None
+
+        def capture_config(*args, **kwargs):
+            nonlocal captured_config
+            captured_config = kwargs.get('config')
+            return self.test_infection_df.copy()
+
+        mock_sampling.side_effect = capture_config
+
+        # Run with partial config
+        run_observational_model(
+            sim_name='test_partial',
+            emod_output_path=self.test_dir,
+            config=partial_config,
+            output_path=self.test_dir,
+            verbose=False
+        )
+
+        # Verify merged config
+        self.assertEqual(captured_config['intervention_start_month'], 50)
+        self.assertEqual(captured_config['hard_filters']['symptomatics_only'],
+                         default_config['hard_filters']['symptomatics_only'])
+        self.assertEqual(captured_config['metrics']['heterozygosity'],
+                         default_config['metrics']['heterozygosity'])
+
+    # ==================== Test 5: Deep merge for nested configs ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('run_observational_model.get_default_config')
+    @patch('pandas.read_csv')
+    def test_deep_merge_nested_configs(self, mock_read_csv, mock_default, mock_summaries, mock_sampling):
+        """Test that nested configs are properly merged"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        default_config = TEST_DATA.get_config()
+        mock_default.return_value = default_config
+
+        # Partial nested config
+        partial_config = {
+            'metrics': {
+                'heterozygosity': False  # Only override one nested value
+            },
+            'sampling_configs': {
+                'random': {
+                    'n_samples_year': 200  # Only override one nested value
+                }
+            }
+        }
+
+        # Capture config
+        captured_config = None
+
+        def capture_config(*args, **kwargs):
+            nonlocal captured_config
+            captured_config = kwargs.get('config')
+            return self.test_infection_df.copy()
+
+        mock_sampling.side_effect = capture_config
+
+        # Run
+        run_observational_model(
+            sim_name='test_deep_merge',
+            emod_output_path=self.test_dir,
+            config=partial_config,
+            output_path=self.test_dir,
+            verbose=False
+        )
+
+        # Verify deep merge
+        self.assertEqual(captured_config['metrics']['heterozygosity'], False)
+        self.assertEqual(captured_config['metrics']['rh'], default_config['metrics']['rh'])
+        self.assertEqual(captured_config['sampling_configs']['random']['n_samples_year'], 200)
+        self.assertEqual(captured_config['sampling_configs']['random']['replicates'],
+                         default_config['sampling_configs']['random']['replicates'])
+
+    # ==================== Test 6: Unknown parameter warning ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('pandas.read_csv')
+    def test_unknown_parameter_warning(self, mock_read_csv, mock_summaries, mock_sampling):
+        """Test that unknown parameters trigger a warning"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        # Config with unknown parameters
+        config_with_typos = {
+            'intervention_start_month': 36,
+            'unknown_parameter': 'value',  # Unknown
+            'metrics': {
+                'heterozygosity': True,
+                'typo_metric': False  # Unknown nested
+            }
+        }
+
+        # Run and capture output
+        with patch('builtins.print') as mock_print:
+            run_observational_modelrun_observational_model(
+                sim_name='test_unknown',
+                emod_output_path=self.test_dir,
+                config=config_with_typos,
+                output_path=self.test_dir,
+                verbose=True
+            )
+
+            # Check for warning
+            print_calls = [str(call) for call in mock_print.call_args_list]
+            warning_found = any('WARNING' in str(call) and 'unknown' in str(call).lower()
+                                for call in print_calls)
+            self.assertTrue(warning_found, "Should warn about unknown parameters")
+
+            # Check that specific unknown keys are mentioned
+            all_output = ' '.join([str(call) for call in print_calls])
+            self.assertIn('unknown_parameter', all_output)
+            self.assertIn('typo_metric', all_output)
+
+    # ==================== Test 7: Invalid JSON error ====================
+    @patch('pandas.read_csv')
+    def test_invalid_json_error(self, mock_read_csv):
+        """Test that invalid JSON in config file raises appropriate error"""
+        mock_read_csv.return_value = self.test_infection_df
+
+        # Create invalid JSON file
+        config_path = os.path.join(self.config_dir, 'invalid.json')
+        with open(config_path, 'w') as f:
+            f.write('{"invalid": json syntax}')
+
+        # Should raise ValueError with JSON error message
+        with self.assertRaises(ValueError) as context:
+            run_observational_model(
+                sim_name='test_invalid_json',
+                emod_output_path=self.test_dir,
+                config_path=config_path,
+                output_path=self.test_dir
+            )
+
+        self.assertIn('Error parsing JSON', str(context.exception))
+
+    # ==================== Test 8: Config priority ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('pandas.read_csv')
+    def test_config_path_priority_over_config_dict(self, mock_read_csv, mock_summaries, mock_sampling):
+        """Test that config_path takes priority over config dictionary"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        # Create config file
+        file_config = {'intervention_start_month': 100}
+        config_path = os.path.join(self.config_dir, 'priority.json')
+        with open(config_path, 'w') as f:
+            json.dump(file_config, f)
+
+        # Create conflicting dict config
+        dict_config = {'intervention_start_month': 50}
+
+        # Capture config
+        captured_config = None
+
+        def capture_config(*args, **kwargs):
+            nonlocal captured_config
+            captured_config = kwargs.get('config')
+            return self.test_infection_df.copy()
+
+        mock_sampling.side_effect = capture_config
+
+        # Run with both
+        run_observational_model(
+            sim_name='test_priority',
+            emod_output_path=self.test_dir,
+            config_path=config_path,
+            config=dict_config,
+            output_path=self.test_dir,
+            verbose=False
+        )
+
+        # File config should win
+        self.assertEqual(captured_config['intervention_start_month'], 100)
+
+    # ==================== Test 9: Multiple unknown keys at different levels ====================
+    @patch('run_observational_model.run_sampling_model')
+    @patch('run_observational_model.run_time_summaries')
+    @patch('pandas.read_csv')
+    def test_multiple_unknown_keys_detected(self, mock_read_csv, mock_summaries, mock_sampling):
+        """Test detection of multiple unknown keys at various nesting levels"""
+        # Setup mocks
+        mock_read_csv.return_value = self.test_infection_df
+        mock_sampling.return_value = self.test_infection_df.copy()
+        mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
+
+        config_with_many_unknowns = {
+            'unknown_top_level': 'value',
+            'metrics': {
+                'unknown_metric_1': True,
+                'unknown_metric_2': False
+            },
+            'sampling_configs': {
+                'random': {
+                    'unknown_param': 123
+                }
+            },
+            'completely_unknown_section': {
+                'nested': 'value'
+            }
+        }
+
+        with patch('builtins.print') as mock_print:
+            run_observational_modelrun_observational_model(
+                sim_name='test_many_unknown',
+                emod_output_path=self.test_dir,
+                config=config_with_many_unknowns,
+                output_path=self.test_dir,
+                verbose=True
+            )
+
+            all_output = ' '.join([str(call) for call in mock_print.call_args_list])
+            self.assertIn('unknown_top_level', all_output)
+            self.assertIn('unknown_metric_1', all_output)
+            self.assertIn('unknown_param', all_output)
+            self.assertIn('completely_unknown_section', all_output)
+
+
+###############################################################################
+# Additional test classes from original file continue...
+###############################################################################
 @unittest.skipIf(not METRICS_IMPORTED, "unified_metric_calculations not available")
 class TestProcessNestedSummaries(unittest.TestCase):
     """Test process_nested_summaries function"""
@@ -1158,8 +1544,6 @@ class TestRunTimeSummaries(unittest.TestCase):
                 individual_ibx_calculation=False,
                 rh_calculation=False
             )
-            
-            print(summaries)
 
             self.assertIsInstance(summaries, pd.DataFrame)
             self.assertGreater(len(summaries), 0)
@@ -1224,14 +1608,15 @@ class TestEdgeCases(unittest.TestCase):
 def run_tests():
     """Run all tests and print results"""
     global TEST_DATA
-    
-    print("="*70)
+
+    print("=" * 70)
     print("INFECTION SAMPLING & METRICS TEST SUITE")
-    print("="*70)
+    print("=" * 70)
     print(f"unified_sampling imported: {SAMPLING_IMPORTED}")
     print(f"unified_metric_calculations imported: {METRICS_IMPORTED}")
-    print("="*70)
-    
+    print(f"run_observational_model imported: {RUN_MODEL_IMPORTED}")
+    print("=" * 70)
+
     if TEST_DATA is not None:
         print("\nUSING SHARED TEST DATA:")
         print(f"  Infection dataframe: {TEST_DATA.base_infection_df.shape}")
@@ -1240,23 +1625,23 @@ def run_tests():
         print(f"  All tests use IDENTICAL copies of this data")
     else:
         print("\nWARNING: TEST_DATA not initialized")
-    print("="*70 + "\n")
-    
+    print("=" * 70 + "\n")
+
     loader = unittest.TestLoader()
     suite = loader.loadTestsFromModule(sys.modules[__name__])
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("TEST SUMMARY")
-    print("="*70)
+    print("=" * 70)
     print(f"Tests run: {result.testsRun}")
     print(f"Successes: {result.testsRun - len(result.failures) - len(result.errors)}")
     print(f"Failures: {len(result.failures)}")
     print(f"Errors: {len(result.errors)}")
     print(f"Skipped: {len(result.skipped)}")
-    print("="*70)
-    
+    print("=" * 70)
+
     return result.wasSuccessful()
 
 

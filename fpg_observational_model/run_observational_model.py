@@ -274,41 +274,122 @@ def make_json_serializable(obj):
 # Functions to read in all files
 #####################################################################################
 def run_observational_model(
-    sim_name,
-    emod_output_path,
-    config_path,
-    output_path,
-    verbose=True):
+        sim_name,
+        emod_output_path,
+        config_path=None,
+        config=None,
+        output_path=None,
+        verbose=True):
+    """
+    Run the observational model with either a config file or config dictionary.
 
-    # Identify running parameters from config file or use defaults
-    if os.path.isfile(config_path):
-        with open(config_path, 'r') as file:
-            config = json.load(file)
+    Parameters:
+        sim_name: Name of the simulation
+        emod_output_path: Path to EMOD output files
+        config_path: Path to config JSON file (optional)
+        config: Configuration dictionary (optional)
+        output_path: Directory to save outputs
+        verbose: Whether to print verbose output
+
+    Note: If both config_path and config are provided, config_path takes precedence.
+          If neither is provided, default config is used.
+          Missing parameters in provided config will be filled with default values.
+          Extra parameters not in default config will trigger a warning.
+    """
+
+    # Helper function to check for unknown keys
+    def check_unknown_keys(default_dict, user_dict, path="config"):
+        """Recursively check for keys in user_dict that don't exist in default_dict."""
+        unknown_keys = []
+        for key, value in user_dict.items():
+            if key not in default_dict:
+                unknown_keys.append(f"{path}.{key}")
+            elif isinstance(value, dict) and isinstance(default_dict.get(key), dict):
+                # Recursively check nested dictionaries
+                nested_unknown = check_unknown_keys(default_dict[key], value, f"{path}.{key}")
+                unknown_keys.extend(nested_unknown)
+        return unknown_keys
+
+    # Helper function to deep merge dictionaries
+    def deep_merge(default_dict, override_dict):
+        """Recursively merge override_dict into default_dict, preserving defaults for missing keys."""
+        result = default_dict.copy()
+        for key, value in override_dict.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+    # Start with default config
+    default_config = get_default_config()
+
+    # Add a warning if both config_path and config are provided
+    if config_path and config is not None:
+        print("Warning: Both config_path and config dictionary provided. "
+              "config_path will take precedence.")
+
+    # Determine which config to use and merge with defaults
+    user_config = None
+    config_source = None
+
+    if config_path and os.path.isfile(config_path):
+        try:
+            with open(config_path, 'r') as file:
+                user_config = json.load(file)
+            config_source = config_path
+            if verbose:
+                print(f"Loaded config from {config_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Error parsing JSON from {config_path}: {e}")
+        except Exception as e:
+            raise ValueError(f"Error reading config file {config_path}: {e}")
+    elif config is not None:
+        user_config = config
+        config_source = "provided dictionary"
         if verbose:
-            print(f"Loaded config from {config_path}")
+            print("Using provided config dictionary")
+
+    # Check for unknown keys and warn user
+    if user_config is not None:
+        unknown_keys = check_unknown_keys(default_config, user_config)
+        if unknown_keys:
+            warning_msg = f"\nWARNING: Found unknown configuration parameters in {config_source}:"
+            for key in unknown_keys:
+                warning_msg += f"\n  - {key}"
+            warning_msg += "\n\nThese parameters will be ignored. Please check for typos or refer to default config."
+            warning_msg += "\nValid top-level parameters are: " + ", ".join(default_config.keys())
+            print(warning_msg)
+
+            # Optional: Ask user to confirm if they want to continue
+            if verbose:
+                print("\nContinuing with valid parameters merged with defaults...\n")
+
+        # Merge user config with defaults
+        config = deep_merge(default_config, user_config)
+        if verbose:
+            print("Merged user config with default values for missing parameters")
     else:
+        config = default_config
         if verbose:
-            print("Input config unavailable, using default config to specify running modes." )
-        config = get_default_config()
+            print("No config provided, using default config to specify running modes.")
 
     # Read in infection data
     infection_df_path = f'{emod_output_path}/infIndexRecursive-genomes-df.csv'
     if os.path.exists(infection_df_path):
         infection_df = pd.read_csv(infection_df_path)
         if verbose:
-            print(f"Loaded data from {infection_df_path}: {len(infection_df)} records") 
+            print(f"Loaded data from {infection_df_path}: {len(infection_df)} records")
     else:
         if verbose:
-            # print("Input file unavailable, creating sample data for testing...")
             print(f"Error: {infection_df_path} not found. Loading test data.")
-        infection_df = pd.read_csv('test_data/test_fpg_infections.csv')   
- 
+        infection_df = pd.read_csv('test_data/test_fpg_infections.csv')
 
-    # Run sampling model
+        # Run sampling model
     sample_df = run_sampling_model(
-        input_df = infection_df,  
-        config = config,  
-        intervention_start_month = config['intervention_start_month']
+        input_df=infection_df,
+        config=config,
+        intervention_start_month=config['intervention_start_month']
     )
     sample_df = extract_sampled_infections(sample_df)
     sample_df['original_nid'] = sample_df['recursive_nid'].copy()
@@ -324,26 +405,23 @@ def run_observational_model(
     ibs_matrix = None
 
     if config['metrics']['identity_by_descent']:
-        user_specified_ibx.append('ibd')  # Fixed: changed from 'ibx' to 'ibd'
+        user_specified_ibx.append('ibd')
         root_matrix_path = f'{emod_output_path}/roots.npy'
         if os.path.exists(root_matrix_path):
-            # mmap_mode removed since it does not work on VM, conflicts with memory mapping between simulations for now. Worth revisiting for dtk_post_process performance improvements.
-            # ibd_matrix = np.load(root_matrix_path, mmap_mode='r')   
             ibd_matrix = load_matrix_safely(root_matrix_path)
             register_matrix('ibd_matrix', ibd_matrix)
         else:
-            print(f"Warning: {root_matrix_path} not found, IBD calculations will be skipped") 
+            print(f"Warning: {root_matrix_path} not found, IBD calculations will be skipped")
 
-    if config['metrics']['identity_by_state'] or config['metrics'].get('heterozygosity', True) or config['metrics']['rh']:
+    if config['metrics']['identity_by_state'] or config['metrics'].get('heterozygosity', True) or config['metrics'][
+        'rh']:
         user_specified_ibx.append('ibs')
         genotype_matrix_path = f'{emod_output_path}/variants.npy'
      
         if os.path.exists(genotype_matrix_path):
-            # mmap_mode removed since it does not work on VM, conflicts with memory mapping between simulations for now. Worth revisiting for dtk_post_process performance improvements.
-            # ibs_matrix = np.load(genotype_matrix_path, mmap_mode='r')
             ibs_matrix = load_matrix_safely(genotype_matrix_path)
         else:
-            print(f"Error: {genotype_matrix_path} not found. Loading test data.") 
+            print(f"Error: {genotype_matrix_path} not found. Loading test data.")
             ibs_matrix = np.load("../test_data/variants.npy", mmap_mode='r')
         register_matrix('ibs_matrix', ibs_matrix)
 
@@ -354,12 +432,15 @@ def run_observational_model(
 
     # Run metric calculations
     all_summaries, all_infection_ibx, all_ibx_dist_dict = run_time_summaries(
-        sample_df, 
+        sample_df,
         subpop_config=config['subpopulation_comparisons'],
         user_ibx_categories=user_specified_ibx
     )
 
     # Save outputs
+    if output_path is None:
+        output_path = "output"
+
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
@@ -384,7 +465,7 @@ def run_observational_model(
         print(f"Saved summary output to {summary_output_filepath}")
         print(f"Saved sample output to {sample_output_filepath}")
 
-    return 
+    return
 
 
 #####################################################################################
@@ -435,20 +516,48 @@ def process_file(file_row, output_summary_dir, config_path=None, verbose=False):
 
 
 # Single file test
+# Single file test
 if __name__ == "__main__":
+    import argparse
+
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Run the FPG observational model')
+    parser.add_argument('--sim_name', type=str, default='test_simulation',
+                        help='Name of the simulation (default: test_simulation)')
+    parser.add_argument('--emod_output_path', type=str, default='./test_data',
+                        help='Path to EMOD output directory (default: ./test_data)')
+    parser.add_argument('--config_path', type=str, default=None,
+                        help='Path to configuration JSON file (optional)')
+    parser.add_argument('--output_path', type=str, default='output',
+                        help='Directory to save outputs (default: output)')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Enable verbose output')
+    # config dictionary option is omitted for CLI simplicity. Use config file instead.
+
+    # Parse arguments
+    args = parser.parse_args()
+
     # Example usage
-    sim_name = "test_simulation"
-    emod_output_path = "../tests/test_data"  # Adjust as needed
-    config_path = "./config.json"     # Adjust as needed
-    output_path = "output"          
-    
+    print(f"Running observational model with:")
+    print(f"  Simulation name: {args.sim_name}")
+    print(f"  EMOD output path: {args.emod_output_path}")
+    print(f"  Config path: {args.config_path if args.config_path else 'Using default config'}")
+    print(f"  Output path: {args.output_path}")
+    print(f"  Verbose: {args.verbose}")
+
     try:
         run_observational_model(
-            sim_name=sim_name,
-            emod_output_path=emod_output_path,
-            config_path=config_path,
-            output_path=output_path
+            sim_name=args.sim_name,
+            emod_output_path=args.emod_output_path,
+            config_path=args.config_path,
+            output_path=args.output_path,
+            verbose=args.verbose
         )
-        print("Model run completed successfully!")
+        print("\nModel run completed successfully!")
     except Exception as e:
-        print(f"Error running model: {e}")
+        import traceback
+
+        print(f"\nError running model: {e}")
+        if args.verbose:
+            print("\nFull traceback:")
+            print(traceback.format_exc())

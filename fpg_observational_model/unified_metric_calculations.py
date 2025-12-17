@@ -36,9 +36,7 @@ def identify_nested_comparisons(df, sampling_column_name,
     Generate a list of infections within sampling schemes for looping through nested comparisons. 
     """
     nested_indices = {}
-
-    print("Here 1:")
-    print("samp")
+    
     # Specifying time groups
     if 'seasonal' not in sampling_column_name:
         if 'month' in sampling_column_name:
