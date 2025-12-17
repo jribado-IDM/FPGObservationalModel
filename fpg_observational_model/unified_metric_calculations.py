@@ -89,7 +89,7 @@ def identify_nested_comparisons(df, sampling_column_name,
             df['age_bin'] = pd.cut(df['age_day'], bins=age_bins, labels=age_bin_labels, include_lowest=True)
             
             if len(df['age_bin'].unique()) > 1:
-                nested_indices['age_bins'] = df.groupby([time_group, 'age_bin'])['infIndex'].apply(list).to_dict()  
+                nested_indices['age_bins'] = df.groupby([time_group, 'age_bin'],observed=True)['infIndex'].apply(list).to_dict()  
             else:
                 available_age_group = df['age_bin'].unique()[0]
                 print(f"User specified nested comparisons by age bins, but only one age group, {available_age_group}, is available.")        
@@ -395,7 +395,8 @@ def inf_ibx_summary(ibx_matrix, ibx_indices):
 def process_nested_ibx(df, gt_matrix, nested_indices, 
 ibx_prefix,
 individual_ibx_calculation=True,
-save_ibx_distributions=True):
+save_ibx_distributions=True,
+save_pairwise_ibx=False):
     """
     Calculate IBx for nested comparison groups.
     
@@ -434,6 +435,14 @@ save_ibx_distributions=True):
         matrix = get_matrix(gt_matrix)[genome_indices, :]
         print("Genotype matrix shape:", matrix.shape)
         ibx_indices, ibx_matrix = calculate_ibx_matrix(year_subset, matrix)
+
+        # FOR HAIRBALL connectedness plots, save the ibx_matrix and ibx_indices per year 
+        if save_pairwise_ibx:
+            # Update output directory here
+            output_dir = "output"
+            pd.save_csv(ibx_indices, f"{output_dir}/ibx_indices_{year_key}.csv", index=False)
+            np.save(f"{output_dir}/ibx_matrix_{year_key}.npy", ibx_matrix)
+
 
         # Add column with the ibx_index for each infection
         ibx_mapping = dict(zip(ibx_indices['ibx_nid'], ibx_indices['ibx_index']))
@@ -541,7 +550,10 @@ save_ibx_distributions=True):
         # Process Fws calculations if specified
         if fws_calculation:
             fws_stats = process_nested_fws(nested_dict, sampling_df)
-            summary_stats = summary_stats.merge(fws_stats, on=['comparison_type', 'year_group', 'subgroup'], how='left')
+            if not fws_stats.empty:
+                summary_stats = summary_stats.merge(fws_stats, on=['comparison_type', 'year_group', 'subgroup'], how='left')
+            else:
+                print(f"Warning: No Fws stats generated for {sampling_column}")
 
         # Process IBx categories if they exist
         if user_ibx_categories and len(user_ibx_categories) > 0: 
@@ -777,6 +789,7 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
         for comparison_type, group_data in nested_indices.items():
             if comparison_type in ['group_year', 'season_bins']:
                 # Year-level calculation
+                year_subset = year_subset.copy()
                 year_subset['fws'] = year_subset['heterozygosity'].apply(calc_fws_for_sample)
                 valid_fws = year_subset['fws'].dropna()
                 
