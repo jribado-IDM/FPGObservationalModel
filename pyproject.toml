@@ -50,6 +50,18 @@ dev = [
     "flake8>=4.0.0",
     "mypy>=0.950",
 ]
+docs = [
+    "mkdocs-material",
+    "mkdocs-include-markdown-plugin",
+    "mkdocstrings-python",
+    "mkdocs-autoapi",
+    "mkdocs-glightbox",
+]
+packaging = [
+    "build",
+    "twine",
+    "bump2version",
+]
 
 [project.urls]
 Homepage = "https://github.com/jribado-IDM/FPGObservationalModel"
