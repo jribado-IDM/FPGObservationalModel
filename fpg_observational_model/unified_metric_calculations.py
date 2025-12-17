@@ -786,6 +786,8 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                         'comparison_type': comparison_type,
                         'year_group': year,
                         'subgroup': None,
+                        'allele_frequencies': np.round(group_af, 3).tolist(),
+                        'heterozygosity_per_position': np.round(group_het, 3).tolist(),
                         'n_samples': len(valid_fws),
                         **fws_summary.to_dict()
                     })
@@ -798,18 +800,54 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                             if isinstance(nested_data, list) and len(nested_data) > 0:
                                 subset_df = year_subset[year_subset['infIndex'].isin(nested_data)]
                                 if not subset_df.empty:
-                                    subset_df['fws'] = subset_df['heterozygosity'].apply(calc_fws_for_sample)
-                                    valid_fws = subset_df['fws'].dropna()
+                                    # Recalculate group-level stats for this subgroup
+                                    subgroup_genome_indices = []
+                                    for idx_list in subset_df['original_nid']:
+                                        if isinstance(idx_list, list):
+                                            subgroup_genome_indices.extend(idx_list)
                                     
-                                    if len(valid_fws) > 0:
-                                        fws_summary = _comprehensive_stats(valid_fws, 'fws')
-                                        fws_stats_list.append({
-                                            'comparison_type': comparison_type,
-                                            'year_group': year,
-                                            'subgroup': str(subgroup),
-                                            'n_samples': len(valid_fws),
-                                            **fws_summary.to_dict()
-                                        })
+                                    if len(subgroup_genome_indices) > 0:
+                                        subgroup_matrix = get_matrix(ibs_matrix)[subgroup_genome_indices, :]
+                                        subgroup_af = np.sum(subgroup_matrix == 1, axis=0) / subgroup_matrix.shape[0]
+                                        subgroup_het = calculate_heterozygosity(subgroup_matrix)
+                                        subgroup_maf_bins = pd.cut(subgroup_af, bins=np.linspace(0, 0.5, 11), labels=False) + 1
+                                        subgroup_het_by_bin = pd.Series(subgroup_het).groupby(subgroup_maf_bins).mean()
+                                        
+                                        # Recalculate Fws with subgroup-specific heterozygosity
+                                        def calc_fws_subgroup(sample_het_list):
+                                            sample_het = np.array(sample_het_list)
+                                            try:
+                                                sample_het_by_bin = pd.Series(sample_het).groupby(subgroup_maf_bins).mean()
+                                                combined = pd.DataFrame({
+                                                    'pop_het': subgroup_het_by_bin,
+                                                    'sample_het': sample_het_by_bin
+                                                }).dropna()
+                                                
+                                                if len(combined) == 0:
+                                                    return np.nan
+                                                
+                                                X = combined['pop_het'].values.reshape(-1, 1)
+                                                y = combined['sample_het'].values
+                                                model = LinearRegression(fit_intercept=False)
+                                                model.fit(X, y)
+                                                return round(1 - model.coef_[0], 3)
+                                            except:
+                                                return np.nan
+                                        
+                                        subset_df['fws'] = subset_df['heterozygosity'].apply(calc_fws_subgroup)
+                                        valid_fws = subset_df['fws'].dropna()
+                                        
+                                        if len(valid_fws) > 0:
+                                            fws_summary = _comprehensive_stats(valid_fws, 'fws')
+                                            fws_stats_list.append({
+                                                'comparison_type': comparison_type,
+                                                'year_group': year,
+                                                'subgroup': str(subgroup),
+                                                'allele_frequencies': np.round(subgroup_af, 3).tolist(),
+                                                'heterozygosity_per_position': np.round(subgroup_het, 3).tolist(),
+                                                'n_samples': len(valid_fws),
+                                                **fws_summary.to_dict()
+                                            })
     
     if fws_stats_list:
         return pd.DataFrame(fws_stats_list)
