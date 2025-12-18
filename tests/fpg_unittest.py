@@ -639,6 +639,8 @@ class TestRunObservationalModel(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         # Create temporary directories for test outputs
+        current_dir = os.path.dirname(__file__)
+        self.emod_output_path = os.path.join(current_dir, 'test_data')
         self.test_dir = tempfile.mkdtemp()
         self.config_dir = tempfile.mkdtemp()
 
@@ -665,7 +667,7 @@ class TestRunObservationalModel(unittest.TestCase):
         with patch('builtins.print') as mock_print:
             run_observational_model(
                 sim_name='test_default',
-                emod_output_path=self.test_dir,
+                emod_output_path=self.emod_output_path,
                 output_path=self.test_dir,
                 verbose=True
             )
@@ -698,9 +700,9 @@ class TestRunObservationalModel(unittest.TestCase):
 
         # Run with config file
         with patch('builtins.print') as mock_print:
-            run_observational_modelrun_observational_model(
+            run_observational_model(
                 sim_name='test_file',
-                emod_output_path=self.test_dir,
+                emod_output_path=self.emod_output_path,
                 config_path=config_path,
                 output_path=self.test_dir,
                 verbose=True
@@ -735,7 +737,7 @@ class TestRunObservationalModel(unittest.TestCase):
         with patch('builtins.print') as mock_print:
             run_observational_model(
                 sim_name='test_dict',
-                emod_output_path=self.test_dir,
+                emod_output_path=self.emod_output_path,
                 config=test_config,
                 output_path=self.test_dir,
                 verbose=True
@@ -778,7 +780,7 @@ class TestRunObservationalModel(unittest.TestCase):
         # Run with partial config
         run_observational_model(
             sim_name='test_partial',
-            emod_output_path=self.test_dir,
+            emod_output_path=self.emod_output_path,
             config=partial_config,
             output_path=self.test_dir,
             verbose=False
@@ -831,7 +833,7 @@ class TestRunObservationalModel(unittest.TestCase):
         # Run
         run_observational_model(
             sim_name='test_deep_merge',
-            emod_output_path=self.test_dir,
+            emod_output_path=self.emod_output_path,
             config=partial_config,
             output_path=self.test_dir,
             verbose=False
@@ -867,9 +869,9 @@ class TestRunObservationalModel(unittest.TestCase):
 
         # Run and capture output
         with patch('builtins.print') as mock_print:
-            run_observational_modelrun_observational_model(
+            run_observational_model(
                 sim_name='test_unknown',
-                emod_output_path=self.test_dir,
+                emod_output_path=self.emod_output_path,
                 config=config_with_typos,
                 output_path=self.test_dir,
                 verbose=True
@@ -901,7 +903,7 @@ class TestRunObservationalModel(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             run_observational_model(
                 sim_name='test_invalid_json',
-                emod_output_path=self.test_dir,
+                emod_output_path=self.emod_output_path,
                 config_path=config_path,
                 output_path=self.test_dir
             )
@@ -941,7 +943,7 @@ class TestRunObservationalModel(unittest.TestCase):
         # Run with both
         run_observational_model(
             sim_name='test_priority',
-            emod_output_path=self.test_dir,
+            emod_output_path=self.emod_output_path,
             config_path=config_path,
             config=dict_config,
             output_path=self.test_dir,
@@ -979,9 +981,9 @@ class TestRunObservationalModel(unittest.TestCase):
         }
 
         with patch('builtins.print') as mock_print:
-            run_observational_modelrun_observational_model(
+            run_observational_model(
                 sim_name='test_many_unknown',
-                emod_output_path=self.test_dir,
+                emod_output_path=self.emod_output_path,
                 config=config_with_many_unknowns,
                 output_path=self.test_dir,
                 verbose=True
