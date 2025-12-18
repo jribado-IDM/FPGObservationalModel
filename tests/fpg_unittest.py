@@ -1022,8 +1022,8 @@ class TestRunObservationalModel(unittest.TestCase):
         self.assertEqual(captured_config['intervention_start_month'], 100)
 
     # ==================== Test 9: Multiple unknown keys at different levels ====================
-    @patch('fpg_observational_model.unified_sampling.run_sampling_model')
-    @patch('fpg_observational_model.unified_metric_calculations.run_time_summaries')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
     def test_multiple_unknown_keys_detected(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test detection of multiple unknown keys at various nesting levels"""
