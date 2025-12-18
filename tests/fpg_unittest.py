@@ -28,17 +28,9 @@ from unittest.mock import patch, MagicMock, mock_open
 # Declare TEST_DATA at module level - will be initialized after class definition
 TEST_DATA = None
 
-MODULE_PATHS = [
-    '../fpg_observational_model',  # One level up, then into fpg_observational_model
-    '.',  # Current directory (in case you run from parent_dir)
-    '..',  # Parent directory
-]
-
-for path in MODULE_PATHS:
-    abs_path = os.path.abspath(path)
-    if abs_path not in sys.path and os.path.exists(abs_path):
-        sys.path.insert(0, abs_path)
-        print(f"Added to path: {abs_path}")
+# Import the module directly using sys.modules AFTER it's been imported by other imports
+# This will be set up after the RUN_MODEL_IMPORTED block
+rom_module = None
 
 # Import your actual functions to test
 try:
@@ -97,19 +89,23 @@ except ImportError as e:
     print(f"Warning: Could not import unified_metric_calculations: {e}")
     HELPER_IMPORTED = False
 
-
 try:
-    from run_observational_model import (
+    from fpg_observational_model.run_observational_model import (
         run_observational_model,
         get_default_config,
         process_file
-    )
-
+        )
     RUN_MODEL_IMPORTED = True
 except ImportError as e:
     print(f"Warning: Could not import run_observational_model: {e}")
     RUN_MODEL_IMPORTED = False    
 
+# ADD THIS RIGHT HERE - Get the actual module object
+if RUN_MODEL_IMPORTED:
+    import sys
+    rom_module = sys.modules['fpg_observational_model.run_observational_model']
+    print(f"✓ rom_module loaded: {rom_module}")
+    print(f"  Has run_sampling_model: {hasattr(rom_module, 'run_sampling_model')}")
 
 ###############################################################################
 # SHARED TEST DATA - Created once, used by all tests
@@ -644,6 +640,7 @@ class TestRunObservationalModel(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.config_dir = tempfile.mkdtemp()
 
+
         # Use shared test data
         self.test_infection_df = TEST_DATA.get_infection_df(with_metrics=False)
 
@@ -653,8 +650,8 @@ class TestRunObservationalModel(unittest.TestCase):
         shutil.rmtree(self.config_dir, ignore_errors=True)
 
     # ==================== Test 1: Default config usage ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
     def test_default_config_when_no_config_provided(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test that default config is used when neither config_path nor config is provided"""
@@ -677,21 +674,47 @@ class TestRunObservationalModel(unittest.TestCase):
             self.assertTrue(any('using default config' in str(call).lower() for call in print_calls))
 
     # ==================== Test 2: Config file loading ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
     def test_config_file_loading(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test loading config from file"""
         # Setup mocks
         mock_read_csv.return_value = self.test_infection_df
-        mock_sampling.return_value = self.test_infection_df.copy()
+
+        # Capture config
+        captured_config = None
+
+        def capture_and_return(*args, **kwargs):
+            nonlocal captured_config
+            print(f"\n=== MOCK CALLED ===")
+            print(f"Args: {args}")
+            print(f"Kwargs: {kwargs}")
+
+            # Try kwargs first
+            if 'config' in kwargs:
+                captured_config = kwargs['config']
+                print(f"Captured from kwargs")
+            # Fall back to positional args
+            elif len(args) >= 2:
+                captured_config = args[1]
+                print(f"Captured from args[1]")
+            else:
+                print(f"Could not capture - args length: {len(args)}")
+
+            result_df = self.test_infection_df.copy()
+            return result_df
+
+        mock_sampling.side_effect = capture_and_return
         mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
 
         # Create test config file
         test_config = {
-            'intervention_start_month': 50,  # default is 29
+            'intervention_start_month': 50,
             'metrics': {
-                'heterozygosity': False      # default is True
+                'identity_by_state': False,  # Disable IBS to avoid matrix loading
+                'identity_by_descent': False,  # Disable IBD to avoid matrix loading
+                'rh': False  # Disable Rh to avoid matrix calculations
             }
         }
         config_path = os.path.join(self.config_dir, 'test_config.json')
@@ -708,13 +731,14 @@ class TestRunObservationalModel(unittest.TestCase):
                 verbose=True
             )
 
-            # Check that config was loaded
-            print_calls = [str(call) for call in mock_print.call_args_list]
-            self.assertTrue(any('Loaded config from' in str(call) for call in print_calls))
+        # Verify config was captured
+        self.assertIsNotNone(captured_config, "Config was not captured")
+        self.assertEqual(captured_config['intervention_start_month'], 50)
+        self.assertEqual(captured_config['metrics']['heterozygosity'], True)
 
     # ==================== Test 3: Config dictionary ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
     def test_config_dictionary_usage(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test using config dictionary directly"""
@@ -748,19 +772,15 @@ class TestRunObservationalModel(unittest.TestCase):
             self.assertTrue(any('provided config dictionary' in str(call).lower() for call in print_calls))
 
     # ==================== Test 4: Partial config merge ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
-    @patch('run_observational_model.get_default_config')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
-    def test_partial_config_merges_with_defaults(self, mock_read_csv, mock_default, mock_summaries, mock_sampling):
+    def test_partial_config_merges_with_defaults(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test that partial config is merged with defaults"""
         # Setup mocks
         mock_read_csv.return_value = self.test_infection_df
         mock_sampling.return_value = self.test_infection_df.copy()
         mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
-
-        default_config = TEST_DATA.get_config()
-        mock_default.return_value = default_config
 
         # Partial config - only override one value
         partial_config = {
@@ -770,12 +790,19 @@ class TestRunObservationalModel(unittest.TestCase):
         # Capture the config passed to sampling model
         captured_config = None
 
-        def capture_config(*args, **kwargs):
+        def capture_and_return(*args, **kwargs):
             nonlocal captured_config
-            captured_config = kwargs.get('config')
-            return self.test_infection_df.copy()
+            # Try kwargs first (how it's called)
+            if 'config' in kwargs:
+                captured_config = kwargs['config']
+            # Fall back to positional args (input_df, config, ...)
+            elif len(args) >= 2:
+                captured_config = args[1]  # config is 2nd positional argument
 
-        mock_sampling.side_effect = capture_config
+            result_df = self.test_infection_df.copy()
+            return result_df
+
+        mock_sampling.side_effect = capture_and_return
 
         # Run with partial config
         run_observational_model(
@@ -787,31 +814,38 @@ class TestRunObservationalModel(unittest.TestCase):
         )
 
         # Verify merged config
+        self.assertIsNotNone(captured_config, "Config was not captured")
         self.assertEqual(captured_config['intervention_start_month'], 50)
+
+        # Verify defaults were preserved for unspecified values
+        self.assertIn('hard_filters', captured_config)
+        self.assertIsInstance(captured_config['hard_filters']['symptomatics_only'], bool)
+
+        self.assertIn('metrics', captured_config)
+        self.assertIsInstance(captured_config['metrics']['heterozygosity'], bool)
+
+        # Verify the default values match what we expect
+        default_config = get_default_config()
         self.assertEqual(captured_config['hard_filters']['symptomatics_only'],
                          default_config['hard_filters']['symptomatics_only'])
         self.assertEqual(captured_config['metrics']['heterozygosity'],
                          default_config['metrics']['heterozygosity'])
 
-    # ==================== Test 5: Deep merge for nested configs ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
-    @patch('run_observational_model.get_default_config')
+    # ==================== Test 5: Deep merge ====================
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
-    def test_deep_merge_nested_configs(self, mock_read_csv, mock_default, mock_summaries, mock_sampling):
+    def test_deep_merge_nested_configs(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test that nested configs are properly merged"""
         # Setup mocks
         mock_read_csv.return_value = self.test_infection_df
         mock_sampling.return_value = self.test_infection_df.copy()
         mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
 
-        default_config = TEST_DATA.get_config()
-        mock_default.return_value = default_config
-
         # Partial nested config
         partial_config = {
             'metrics': {
-                'heterozygosity': False  # Only override one nested value
+                'complexity_of_infection': False  # Only override one nested value
             },
             'sampling_configs': {
                 'random': {
@@ -823,12 +857,19 @@ class TestRunObservationalModel(unittest.TestCase):
         # Capture config
         captured_config = None
 
-        def capture_config(*args, **kwargs):
+        def capture_and_return(*args, **kwargs):
             nonlocal captured_config
-            captured_config = kwargs.get('config')
-            return self.test_infection_df.copy()
+            # Try kwargs first (how it's called)
+            if 'config' in kwargs:
+                captured_config = kwargs['config']
+            # Fall back to positional args (input_df, config, ...)
+            elif len(args) >= 2:
+                captured_config = args[1]  # config is 2nd positional argument
 
-        mock_sampling.side_effect = capture_config
+            result_df = self.test_infection_df.copy()
+            return result_df
+
+        mock_sampling.side_effect = capture_and_return
 
         # Run
         run_observational_model(
@@ -839,16 +880,22 @@ class TestRunObservationalModel(unittest.TestCase):
             verbose=False
         )
 
+        # Verify config was captured
+        self.assertIsNotNone(captured_config, "Config was not captured")
+
+        # Get default config to compare
+        default_config = get_default_config()
+
         # Verify deep merge
-        self.assertEqual(captured_config['metrics']['heterozygosity'], False)
+        self.assertEqual(captured_config['metrics']['complexity_of_infection'], False)
         self.assertEqual(captured_config['metrics']['rh'], default_config['metrics']['rh'])
         self.assertEqual(captured_config['sampling_configs']['random']['n_samples_year'], 200)
         self.assertEqual(captured_config['sampling_configs']['random']['replicates'],
                          default_config['sampling_configs']['random']['replicates'])
 
     # ==================== Test 6: Unknown parameter warning ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
     def test_unknown_parameter_warning(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test that unknown parameters trigger a warning"""
@@ -911,34 +958,54 @@ class TestRunObservationalModel(unittest.TestCase):
         self.assertIn('Error parsing JSON', str(context.exception))
 
     # ==================== Test 8: Config priority ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
+    @patch.object(rom_module, 'run_sampling_model')
+    @patch.object(rom_module, 'run_time_summaries')
     @patch('pandas.read_csv')
     def test_config_path_priority_over_config_dict(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test that config_path takes priority over config dictionary"""
         # Setup mocks
         mock_read_csv.return_value = self.test_infection_df
-        mock_sampling.return_value = self.test_infection_df.copy()
+
+        # Capture config
+        captured_config = None
+
+        def capture_and_return(*args, **kwargs):
+            nonlocal captured_config
+            # Try kwargs first (how it's called)
+            if 'config' in kwargs:
+                captured_config = kwargs['config']
+            # Fall back to positional args (input_df, config, ...)
+            elif len(args) >= 2:
+                captured_config = args[1]  # config is 2nd positional argument
+
+            result_df = self.test_infection_df.copy()
+            return result_df
+
+        mock_sampling.side_effect = capture_and_return
         mock_summaries.return_value = (pd.DataFrame(), pd.DataFrame(), {})
 
         # Create config file
-        file_config = {'intervention_start_month': 100}
+        file_config = {
+            'intervention_start_month': 100,
+            'metrics': {
+                'identity_by_state': False,
+                'identity_by_descent': False,
+                'rh': False
+            }
+        }
         config_path = os.path.join(self.config_dir, 'priority.json')
         with open(config_path, 'w') as f:
             json.dump(file_config, f)
 
         # Create conflicting dict config
-        dict_config = {'intervention_start_month': 50}
-
-        # Capture config
-        captured_config = None
-
-        def capture_config(*args, **kwargs):
-            nonlocal captured_config
-            captured_config = kwargs.get('config')
-            return self.test_infection_df.copy()
-
-        mock_sampling.side_effect = capture_config
+        dict_config = {
+            'intervention_start_month': 50,
+            'metrics': {
+                'identity_by_state': False,
+                'identity_by_descent': False,
+                'rh': False
+            }
+        }
 
         # Run with both
         run_observational_model(
@@ -950,12 +1017,13 @@ class TestRunObservationalModel(unittest.TestCase):
             verbose=False
         )
 
-        # File config should win
+        # Verify
+        self.assertIsNotNone(captured_config, "Config was not captured")
         self.assertEqual(captured_config['intervention_start_month'], 100)
 
     # ==================== Test 9: Multiple unknown keys at different levels ====================
-    @patch('run_observational_model.run_sampling_model')
-    @patch('run_observational_model.run_time_summaries')
+    @patch('fpg_observational_model.unified_sampling.run_sampling_model')
+    @patch('fpg_observational_model.unified_metric_calculations.run_time_summaries')
     @patch('pandas.read_csv')
     def test_multiple_unknown_keys_detected(self, mock_read_csv, mock_summaries, mock_sampling):
         """Test detection of multiple unknown keys at various nesting levels"""
