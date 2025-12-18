@@ -8,6 +8,9 @@ import inspect
 import json
 from os.path import basename
 
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from fpg_observational_model.unified_sampling import run_sampling_model
 from fpg_observational_model.unified_metric_calculations import register_matrix, run_time_summaries, generate_het_barcode
 
@@ -56,6 +59,7 @@ def get_default_config():
             'identity_by_descent': False,
             'identity_by_state': True,
             'individual_ibx': True,
+            'fws': True,
             'monogenomic_proportion': True,
             'rh': True,
             'unique_genome_proportion': True # Will calculate both the proportion of unique genomes in the sampled infections to replicate phasing and from monogenomic samples with an effective COI of 1  only to match barcode limits.
@@ -181,7 +185,8 @@ def update_matrix_indices(sample_df):
     
     # Parse the recursive_nid column
     df['original_nid'] = df['recursive_nid'].copy()
-    df['original_nid'] = df['original_nid'].apply(ast.literal_eval)
+    df['original_nid'] = df['original_nid'].apply(
+    lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
     # Step 1: Get all unique recursive_nid values across all rows
     all_nids = []
@@ -387,8 +392,12 @@ def run_observational_model(
         intervention_start_month=config['intervention_start_month']
     )
     sample_df = extract_sampled_infections(sample_df)
-    sample_df = update_matrix_indices(sample_df)
-
+    sample_df['original_nid'] = sample_df['recursive_nid'].copy()
+    
+    # NOTE: Commented out to preserve original_nid without changing recursive_nid. In theory this updated index can be used to read in smaller genotype matrix below of infections sampled across all sampling schemes. Will require changes to functions that use the original_nid to map genomes to infections. 
+    # sample_df = update_matrix_indices(sample_df)
+    # matrix_indices = sample_df['recursive_nid'].tolist()
+ 
     # Identify additional file for metric calculations - mainly IBx
     # Memory-map the genotype files (doesn't load to RAM) for access later
     user_specified_ibx = []
@@ -408,22 +417,18 @@ def run_observational_model(
         'rh']:
         user_specified_ibx.append('ibs')
         genotype_matrix_path = f'{emod_output_path}/variants.npy'
-        print(genotype_matrix_path)
+     
         if os.path.exists(genotype_matrix_path):
             ibs_matrix = load_matrix_safely(genotype_matrix_path)
         else:
             print(f"Error: {genotype_matrix_path} not found. Loading test data.")
-            ibs_matrix = np.load("test_data/test_variants.npy", mmap_mode='r')
+            ibs_matrix = np.load("../test_data/variants.npy", mmap_mode='r')
         register_matrix('ibs_matrix', ibs_matrix)
 
     if config['metrics'].get('heterozygosity', True) and ibs_matrix is not None:
         # Generate barcode with Ns for heterozygosity calculations
-        sample_df['barcode_with_Ns'] = sample_df.apply(
-            lambda row: generate_het_barcode(ibs_matrix, row['recursive_nid']), axis=1)
-
-        sample_df['heterozygosity'] = sample_df['barcode_with_Ns'].apply(
-            lambda x: x.count('N') / len(x) if isinstance(x, list) and len(x) > 0 else 0
-        )
+        sample_df['original_nid'] = sample_df['original_nid'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        sample_df[['genotype_coi', 'barcode_with_Ns', 'heterozygosity']] = sample_df.apply(lambda row: generate_het_barcode(ibs_matrix, row['original_nid']), axis=1, result_type='expand')
 
     # Run metric calculations
     all_summaries, all_infection_ibx, all_ibx_dist_dict = run_time_summaries(

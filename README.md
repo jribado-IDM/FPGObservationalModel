@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ~~~
 
 ## Config Parameters
-
+                                                                                                                                                               
 ### Hard filters 
 
 The hard filter parameter options apply blanket filters to the full set of reported EMOD infections. If you are interested in comparing the differences in genetic metrics from the total population for these individual groups, use the subpopulation options instead. 
@@ -66,7 +66,8 @@ There are three broad method options for sampling:
 Above options will calculate metrics for all samples in a population for each sampling method specified. Additionally, comparisons within subpopulations to compare with all infections in the sampled population are supported. This allows for the investigation of metrics that may be more sensitive within groups or smaller timescales.
 
  The subpopulation options supported include:
-- 'monthly':  Provide summary statistics by month in addition to year
+- 'add_monthly':  Provide summary statistics by month for all infections. Excludes IBx and Rh relatedness calculations to reduce computational time and memory and real data calculations are not computed at this scale. This default can be changed in the run_time_summaries
+ function in unified_metric_calculations by using the complete nested dictionary instead of the nested dictionary ignoring the monthly groupings on infections. (May require further testing and debugging.)
 - 'populations':  Defined by the population node in EMOD
 - 'polygenomic':  Is polygenomic = 1, else monogenomic = 0
 - 'symptomatic':  Is symptomatic = 1, else asymptomatic = 0
@@ -76,16 +77,18 @@ Above options will calculate metrics for all samples in a population for each sa
 
 This section defines with genetic metrics will be calculated for each set as boolean input. 
 
-    - 'cotransmission_proportion': From polygenomic infections, calculates how many contain genomes from a single mosquito biting event. 
-    - 'complexity_of_infection': Calculated both 'true_coi' for the number of genomes a person holds in an infection and the 'effective_coi' for the number of unique genomes a person hold in an infection as the upper detectable bound. 
-    - 'heterozygosity': For polygenomic infections, calculates how many positions contain more than one allele across genomes in an infection. Currently assumes all genotypes are captured, future plans include adding a density dependent weight to make this more realistic to specific strain parasitemia. 
-    - 'identity_by_descent': Compares the pairwise Hamming distance for all genomes, defined by the parents at the start of the simulation, in specified infections at the population and/or the individual level. 
-    - 'identity_by_state': Compares the pairwise Hamming distance for all genomes, defined by reference or alternative biallelic representations, in specified infections at the population and/or the individual level.
-    - 'individual_ibx': Specification on whether or not to provide within sample relatedness for polygenomic infections. Will be set to True if Rh is specified. 
-    - 'monogenomic_proportion': Calculates the proportion of monogenomic samples from the effective COI. 
-    - 'rh': Calculates Rh for polygenomic infections, matching [paper reference] with 200 unique monogenomic pairwise draws to determine Hmono and sample heterozygosity for Hpoly. 
-    - 'unique_genome_proportion': Calculates the proportion of genomes observed once in the sampled population, assuming phasing. 
-    - 'unique_mono_proportion': Calculated the proportion of genomes observed once in the sampled population, assuming from monogenomic samples only to avoid phasing assumptions. 
+- 'cotransmission_proportion': From polygenomic infections, calculates how many contain genomes from a single mosquito biting event. 
+- 'complexity_of_infection': Calculated both 'true_coi' for the number of genomes a person holds in an infection and the 'effective_coi' for the number of unique genomes a person hold in an infection as the upper detectable bound. 
+- 'heterozygosity': Calculated as 1 - (p^2 + q^2), where p is the reference and q is the alternative allele.  Currently assumes all genotypes are captured, future plans include adding a density dependent weight to make this more realistic to specific strain parasitemia. 
+- 'identity_by_descent': Compares the pairwise Hamming distance for all genomes, defined by the parents at the start of the simulation, in specified infections at the population and/or the individual level. 
+- 'identity_by_state': Compares the pairwise Hamming distance for all genomes, defined by reference or alternative biallelic representations, in specified infections at the population and/or the individual level.
+- 'individual_ibx': Specification on whether or not to provide within sample relatedness for polygenomic infections. Will be set to True if Rh is specified. 
+- 'monogenomic_proportion': Calculates the proportion of monogenomic samples from the effective COI. 
+- 'rh': Calculates Rh for polygenomic infections, matching [paper reference] with 200 unique monogenomic pairwise draws to determine H_mono and sample heterozygosity for H_poly. 
+- 'unique_genome_proportion': Calculates the proportion of genomes observed once in the sampled population, assuming phasing. 
+- 'unique_mono_proportion': Calculated the proportion of genomes observed once in the sampled population, assuming from monogenomic samples only to avoid phasing assumptions.
+
+**Note: Identity by state and descent calculations are optimized for the population level to account for clones to reduce similar pairwise calculations. To replicate pairwise comparison plots, users can manually output the unique genotype similarity matrix and the index order of each genotype in the process_nested_ibx function in the unified_metric_calculations script.** These files, when paired with the sample infection file, can allow for user flexibility to account for specific pairwise comparisons of the relatedness in a population. 
 
 
 ### Other
@@ -102,8 +105,8 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'cotx': Categorizes co-transmission events as infections with an effective COI > 2 with a single biting event (one unique value in 'bite_ids'). Monogenomic infections are excluded. 
 - '{sampling_name}_{n_samples}_rep{1...N replicates}': Columns specifying which sampling scheme the infection may be represented. Number of columns will match 'sampling' config options specified.
 - 'barcode_with_Ns': Barcode string for each infection. Polygenomic infections with any discordant alleles within any genome as assigned N at each discordant position.
-- 'heterozygosity': Proportion of barcode positions with an N.
-- '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}: Individual infection relatedness for polygenomic infections
+- 'heterozygosity': List of heterozygosity calculated as 1 - (p^2 + q^2), where p is the reference and q is the alternative allele for each variant position.
+- '{ibd/ibs}_{count,mean,std,min,25,50,75,max}: Individual infection relatedness for polygenomic infections
 - {sampling_name}_{n_samples}_rep{1...N replicates}-individual_inferred_rh: Individual level Rh comparisons for each sampling scheme. Provided as individual columns in case infections are sampled across different sampling frames. 
 
 
@@ -114,8 +117,8 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'year_group': Specifies the year (either simulation year or intervention shifted year) or the seasonal grouping bin for summary statistics.
 - 'sub_group': Sepcifies the additional groupings within subpopulations, e.g. whether True/False for polygenomic or symptomatic.  
 - 'n_infections': Counts for the number of infections in each sampling scheme, for each year and subpopulation grouping specified in the observational model run. These are the actual number of infections that were available in the report by grouping and may be lower than the specified targets.
-- '{true/effective}_poly_coi_count': The number of infections per grouping that have a COI > 2. True is the modeled umber of genomes tracked, which effective is the number of unique and detectable genomes in an infection.
-- '{true/effective_poly_coi_prop}': The proportion of infections per grouping that have a COI > 2. Calculated as '{true/effective}_poly_coi_count'/n_infections.
+- '{true/effective/genotype}_poly_coi_count': The number of infections per grouping that have a COI > 2. True is the modeled number of genomes tracked, which effective is the number of unique and detectable genomes in an infection by ancestry, and genome is the number of unique detectable genomes in an infection by bi-allelic representation.
+- '{true/effective/genotype_poly_coi_prop}': The proportion of infections per grouping that have a COI > 2. Calculated as '{true/effective/genotype}_poly_coi_count'/n_infections.
 - 'all_genomes_total_count': The total number of genomes identified in all infections per grouping, assuming full phasing of all infection genomes. 
 - 'all_genomes_unique_count': The total number of genomes observed once in all genomes from infections per grouping, assuming full phasing of all infection genomes.
 - 'all_genomes_ids_unique_prop': The proportion of unique genomes in all genomes from infections per grouping, assuming full phasing of all infection genomes. Calculated as 'all_genomes_unique_count'/'all_genomes_total_count'.
@@ -124,8 +127,11 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'mono_genomes_ids_unique_prop': The proportion of unique genomes in all genomes from infections per grouping, measured only from monogenomic infections that are inherently phased. Calculated as 'mono_genomes_unique_count'/'mono_genomes_total_count'.
 - 'cotransmission_count': The number of infections per grouping with a COI > 2 and from a single mosquito biting event. 
 - 'cotransmission_prop': The proportion of co-transmission infections within polygenomic infections. Calculated as 'cotransmission_count'/'effective_poly_coi_count'.
-- '{true/effective}_coi_{mean,median,std,min,q25,75,max}': Full summary statistics for the COI distribution of infections in a grouping. 
-- '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}': Full population level summary statistics for the COI distribution of infections in a grouping.
+- '{true/effective/genotype}_coi_{mean,median,std,min,q25,75,max}': Full summary statistics for the COI distribution of infections in a grouping. 
+- '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}': Full population level summary statistics for the relatedness distribution of infections in a grouping.
+- 'allele_frequencies': List of the alternative allele frequency in infections for all phased genomes from infections per grouping.
+- 'heterozygosity_per_position': Heterozygosity calculated for all phased genomes from infections per grouping. Assumption that each allele in the infection is proportional to the the number of strains containing that genotype (i.e. each genome produces a single read count per infection for each allele, and total read counts are the sum of the genomes in the infection). 
+- 'fws_{pairwise_count,mean,median,std,min,q25,75,max}': Summary statistics for within host diversity (F_ws) according to the method devised in  Manske et.al, 2012. 
 - 'rh_inferred_{mean,median,std}': Summary statistics for the inferred Rh from polygenomic infections, bootstrapping the monogenomic Rh. 
 
 
