@@ -2,7 +2,9 @@ name: Build docs
 
 on:
   pull_request:
-    branches: main
+    branches: 
+      - main
+      - genmoz_metrics
 
   # Allows manual run from the Actions tab
   workflow_dispatch:

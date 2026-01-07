@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - genmoz_metrics
     paths: 
       - 'mkdocs.yml'
       - 'docs/**'
