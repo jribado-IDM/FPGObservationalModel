@@ -34,7 +34,7 @@ jobs:
           pip install ./dist/${{ env.PACKAGE_NAME }}-${{ github.event.inputs.package_version }}-py3-none-any.whl --index-url=https://packages.idmod.org/api/pypi/pypi-production/simple
       - name: Run unit tests
         run: |
-          pip install pytest, pytest-cov
+          pip install pytest pytest-cov
           cd tests
           pytest
       - name: Install twine
