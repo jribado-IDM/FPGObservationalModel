@@ -9,9 +9,6 @@ on:
       STAGING_ARTIFACTORY_PASSWORD:
         required: true
 
-permissions:
-  contents: write # Allow writing to the repository (e.g., commits, pushes)
-
 jobs:
   deploy-emodpy-staging:
     name: Deploy to staging
