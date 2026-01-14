@@ -31,7 +31,12 @@ jobs:
           python -m pip download --index-url $PIP_EXTRA_INDEX_URL --no-deps ${{ env.PACKAGE_NAME }}==${{ github.event.inputs.package_version }} -d ./dist
       - name: Install staging package
         run: |
-          pip install ./dist/${{ env.PACKAGE_NAME }}-${{ github.event.inputs.package_version }}-py3-none-any.whl
+          pip install ./dist/${{ env.PACKAGE_NAME }}-${{ github.event.inputs.package_version }}-py3-none-any.whl --index-url=https://packages.idmod.org/api/pypi/pypi-production/simple
+      - name: Run unit tests
+        run: |
+          pip install pytest, pytest-cov
+          cd tests
+          pytest
       - name: Install twine
         run: pip install twine
       - name: Upload to production PyPI
