@@ -43,7 +43,10 @@ ADD requirements.txt /tmp/
 # make the PIP index configurable so we can build against staging, production, or a local PyPI server
 ARG CONTAINER_VERSION
 
-# Install the packages
+# Install the ObsModel packages
 # RUN bash -c "pip3 install -r /tmp/requirements.txt"
 RUN pip3 install --no-cache-dir "fpg-observational-model==1.0.0.dev1" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
+
+# Install the emod-api package
+RUN pip3 install --no-cache-dir "emod-api>=1.33.6,<2" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 
