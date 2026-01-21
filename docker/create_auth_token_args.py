@@ -36,7 +36,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    compshost = args.comps_url
-
-    Client.login(compshost, StaticCredentialPrompt(comps_url=args.comps_url, username=args.username,
-                                                   password=args.password))
+    Client.login(args.comps_url, StaticCredentialPrompt(comps_url=args.comps_url, username=args.username,
+                                                        password=args.password))
