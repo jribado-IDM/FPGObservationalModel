@@ -119,7 +119,7 @@ def apply_emod_filters(infection_df,
         fever_value = 1 if fever_filter else 0
         df = df[df['fever_status'] == fever_value]
         fever_remaining = len(df)
-        print(f"    Fever filter: {original_size} → {fever_remaining} samples "
+        print(f"    Fever filter: {original_size} -> {fever_remaining} samples "
               f"({'fever cases' if fever_filter else 'non-fever cases'} only)")
     
     # Apply COI filter
@@ -147,7 +147,7 @@ def apply_emod_filters(infection_df,
             before_filter = len(df)
             df = df[df[column] == value]
             after_filter = len(df)
-            print(f"    Filter {column}={value}: {before_filter} → {after_filter} samples")
+            print(f"    Filter {column}={value}: {before_filter} -> {after_filter} samples")
     
     if len(df) == 0:
         print("    Warning: All data filtered out!")

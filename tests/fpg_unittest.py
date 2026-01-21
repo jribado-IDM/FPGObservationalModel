@@ -1509,7 +1509,7 @@ class TestIdentityByState(unittest.TestCase):
         ])
         
         result = ibx_distribution(indices, hash_ibx)
-        # Pairs: (0,1)→5/10=0.5, (0,2)→10/10=1.0, (1,2)→2/10=0.2
+        # Pairs: (0,1)-> 5/10=0.5, (0,2) -> 10/10=1.0, (1,2) -> 2/10=0.2
         expected = {0.5: 1, 1.0: 1, 0.2: 1}
         
         self.assertEqual(result, expected)
