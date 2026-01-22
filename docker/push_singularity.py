@@ -4,6 +4,7 @@ from idmtools.core.platform_factory import Platform
 from idmtools_platform_comps.utils.singularity_build \
                                          import SingularityBuildWorkItem
 import os
+import re
 
 def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None,
                comps_url: str = 'https://comps.idmod.org', comps_env: str = 'Calculon', os_name: str = 'rocky'
@@ -38,6 +39,30 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
                                             definition_file=def_file_name,
                                             image_name='ObsModel_'+os_name+'.sif',
                                             force=True)
+        # load the definition file content to get the version info for fpg-observational-model, emod-api, python-snappy if available
+        version_info = {}
+        patterns = {
+            'fpg-observational-model': r'fpg-observational-model([=><!~]+[^\s"\'\,]+)',
+            'emod-api': r'emod-api([=><!~]+[^\s"\'\,]+(?:,[^\s"\'\,]+)*)',
+            'python-snappy': r'python-snappy([=><!~]+[^\s"\'\,]+)'
+        }
+        with open(def_file_name, 'r') as def_file:
+            for line in def_file:
+                for pkg, pat in patterns.items():
+                    if pkg in line:
+                        match = re.search(pat, line)
+                        if match:
+                            spec = match.group(1)
+                            if spec.startswith('=='):
+                                version_info[pkg] = spec[2:]
+                            else:
+                                version_info[pkg] = spec
+        if version_info:
+            print("Detected package versions in definition file:")
+            for pkg, ver in version_info.items():
+                print(f"  {pkg}: {ver}")
+        sbwi_obj.update_tags(version_info)
+
     elif sif_file_name is not None:
         # Check if the singularity file exists
         if not os.path.exists(sif_file_name):

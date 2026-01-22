@@ -53,14 +53,14 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/lib64/mpich/lib
 
 # make the PIP index configurable so we can build against staging, production, or a local PyPI server
 
-# Install python-snappy
+# Install snappy
 pip3 install --no-cache-dir "python-snappy==0.6.1"
 
 # Install the ObsModel packages
 # RUN bash -c "pip3 install -r /tmp/requirements.txt"
 pip3 install --no-cache-dir "fpg-observational-model==1.0.0.dev3" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 
-# Install the emod-api package
+# Install the emod_api package
 pip3 install --no-cache-dir "emod-api>=1.33.6,<2" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 
 %environment
