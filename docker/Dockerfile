@@ -52,5 +52,5 @@ RUN pip3 install --no-cache-dir "python-snappy==0.6.1"
 RUN pip3 install --no-cache-dir "fpg-observational-model==1.0.0.dev3" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 
 # Install the emod_api package
-RUN pip3 install --no-cache-dir "emod-api>=1.33.6,<2" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
+RUN pip3 install --no-cache-dir "emod-api>=1.33.7,<2" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 

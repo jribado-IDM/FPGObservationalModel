@@ -29,6 +29,8 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
         warnings.warn("Both def_file_name and sif_file_name are provided. def_file_name will be used.")
         sif_file_name = None
 
+    version_info = {}
+
     # Create Singularity build work item
     if def_file_name is not None:
         # Check if the definition file exists
@@ -40,7 +42,6 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
                                             image_name='ObsModel_'+os_name+'.sif',
                                             force=True)
         # load the definition file content to get the version info for fpg-observational-model, emod-api, python-snappy if available
-        version_info = {}
         patterns = {
             'fpg-observational-model': r'fpg-observational-model([=><!~]+[^\s"\'\,]+)',
             'emod-api': r'emod-api([=><!~]+[^\s"\'\,]+(?:,[^\s"\'\,]+)*)',
@@ -76,6 +77,12 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
 
     # Wait until the image is built
     ac_obj = sbwi_obj.run(wait_until_done=True, platform=plat_obj)
+
+    # Update asset with tage
+    if version_info:
+        ac_obj.update_tags(version_info)
+        result = plat_obj.create_items(ac_obj)
+
 
     # Save asset id for sif to file
     ac_obj.to_id_file('ObsModel_'+os_name+'.id')
