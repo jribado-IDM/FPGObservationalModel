@@ -14,6 +14,7 @@ RUN yum -y install rpm dnf-plugins-core \
     python3-devel \
     mpich \
     snappy \
+	snappy-devel \
     glibc-devel \
     epel-release \
     wget \
@@ -42,6 +43,9 @@ ADD requirements.txt /tmp/
 
 # make the PIP index configurable so we can build against staging, production, or a local PyPI server
 ARG CONTAINER_VERSION
+
+# Install python-snappy
+RUN pip3 install --no-cache-dir "python-snappy==0.6.1"
 
 # Install the ObsModel packages
 # RUN bash -c "pip3 install -r /tmp/requirements.txt"

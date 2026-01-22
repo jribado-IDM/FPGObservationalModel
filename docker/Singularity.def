@@ -26,6 +26,7 @@ yum -y install \
     python3-devel \
     mpich \
     snappy \
+	snappy-devel \
     glibc-devel \
     epel-release \
     wget \
@@ -51,6 +52,9 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/lib64/mpich/lib
 # Add the requirements file
 
 # make the PIP index configurable so we can build against staging, production, or a local PyPI server
+
+# Install python-snappy
+pip3 install --no-cache-dir "python-snappy==0.6.1"
 
 # Install the ObsModel packages
 # RUN bash -c "pip3 install -r /tmp/requirements.txt"
