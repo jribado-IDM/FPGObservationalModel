@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fpg-observational-model"
-version = "1.0.0.dev2"
+version = "1.0.0.dev3"
 description = "Observational model for EMOD's Full Parasite Genetics output to convert modeled results into recapitulative sampling for genomic surveillance"
 readme = "README.md"
 requires-python = ">=3.9"
