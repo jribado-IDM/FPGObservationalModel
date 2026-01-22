@@ -26,7 +26,7 @@ yum -y install \
     python3-devel \
     mpich \
     snappy \
-	snappy-devel \
+    snappy-devel \
     glibc-devel \
     epel-release \
     wget \

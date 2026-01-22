@@ -14,7 +14,7 @@ RUN yum -y install rpm dnf-plugins-core \
     python3-devel \
     mpich \
     snappy \
-	snappy-devel \
+    snappy-devel \
     glibc-devel \
     epel-release \
     wget \
