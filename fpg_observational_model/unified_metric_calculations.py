@@ -84,7 +84,7 @@ def identify_nested_comparisons(df, sampling_column_name,
         if config.get('age_bins', False):
             days_per_year = 365.25
             age_bins = [0, int(days_per_year * 5), int(days_per_year * 15), int(df['age_day'].max() + 1)]
-            age_bin_labels = ['0-5yrs', '5-15yrs', '15+yrs']     
+            age_bin_labels = ['0-5yrs', '5-15yrs', '15+yrs']
             df['age_bin'] = pd.cut(df['age_day'], bins=age_bins, labels=age_bin_labels, include_lowest=True)
             
             if len(df['age_bin'].unique()) > 1:
@@ -855,7 +855,7 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                                             except:
                                                 return np.nan
                                         
-                                        subset_df['fws'] = subset_df['heterozygosity'].apply(calc_fws_subgroup).copy()
+                                        subset_df.loc[:, 'fws'] = subset_df['heterozygosity'].apply(calc_fws_subgroup)
                                         valid_fws = subset_df['fws'].dropna()
                                         
                                         if len(valid_fws) > 0:
