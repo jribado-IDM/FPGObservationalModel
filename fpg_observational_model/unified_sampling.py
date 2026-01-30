@@ -571,7 +571,7 @@ def run_sampling_functions(infection_df, sampling_config, **kwargs):
     Returns:
       pd.DataFrame: DataFrame with sampling columns added
     """
-    
+
     method = sampling_config['method']
     n_samples_year = sampling_config['n_samples_year']
     replicates = sampling_config['replicates']
@@ -674,7 +674,6 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
     if 'simulation_year' not in df.columns and 'year' in df.columns:
         df['simulation_year'] = df['year'].copy()    
     
-    
     try:
         # Step 1: Apply hard filters
         if verbose:
@@ -710,20 +709,21 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
             
             # Run the sampling method
             sampled_df = run_sampling_functions(df_metrics, sampling_config)
+            # append used defined sampling name to sampling columns
+            sampled_df.columns = [f'{sampling_name}_{col}' if 'rep' in col else col for col in sampled_df.columns]
 
             if config['subpopulation_comparisons'].get('add_monthly'):
                 sampled_df['month_rep0'] = 1 
             
             # Merge the sampling columns back to the main dataframe
-            sampling_columns = [col for col in sampled_df.columns 
-                              if sampling_name in col and 'rep' in col]
+            sampling_columns = [col for col in sampled_df.columns if sampling_name in col or 'rep' in col]
             
             for col in sampling_columns:
                 final_df[col] = sampled_df[col]
         
         if config['subpopulation_comparisons'].get('add_monthly'):
             final_df['month_rep0'] = 1  # All infections included for monthly analysis
-            print("Added 'month_rep0' column for monthly subpopulation comparisons")
+            print("Added 'month_rep0' column for monthly comparisons with all  infections. ")
         
 
         # Final summary
@@ -732,8 +732,7 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
             print(f"Final dataframe shape: {final_df.shape}")
             
             # Show sampling column summary
-            sampling_cols = [col for col in final_df.columns 
-                            if any(method in col for method in ['random', 'seasonal', 'age', 'month']) and 'rep' in col]
+            sampling_cols = [col for col in final_df.columns if 'rep' in col]
             print(f"Sampling columns created: {sampling_cols}")
             
             for col in sampling_cols:
