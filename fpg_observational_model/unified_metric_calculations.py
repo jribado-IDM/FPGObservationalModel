@@ -163,7 +163,7 @@ def _analyze_binary_in_subset(series, prefix):
     
     mask = series == 1 
     count = mask.sum()
-    prop = count / len(series)
+    prop = round(count / len(series), 3)
     
     return {f'{prefix}_count': count, f'{prefix}_prop': prop}    
 
@@ -314,9 +314,9 @@ def weighted_describe_scipy(summary_dict, ibx_prefix):
         f'{ibx_prefix}_mean': round(mean, 3),
         f'{ibx_prefix}_std': round(std, 3),
         f'{ibx_prefix}_min': round(np.min(expanded_values), 3),
-        f'{ibx_prefix}_25%': round(np.percentile(expanded_values, 25), 3),
-        f'{ibx_prefix}_50%': round(np.median(expanded_values), 3),
-        f'{ibx_prefix}_75%': round(np.percentile(expanded_values, 75), 3),
+        f'{ibx_prefix}_q25': round(np.percentile(expanded_values, 25), 3),
+        f'{ibx_prefix}_median': round(np.median(expanded_values), 3),
+        f'{ibx_prefix}_q75': round(np.percentile(expanded_values, 75), 3),
         f'{ibx_prefix}_max': round(np.max(expanded_values), 3)
     }
     
@@ -522,6 +522,7 @@ save_pairwise_ibx=False):
         individual_ibx_df = pd.DataFrame()
 
     return ibx_results_df, individual_ibx_df, ibx_dist_dict
+
                
 
 def run_time_summaries(sample_df,
@@ -536,7 +537,6 @@ save_ibx_distributions=True):
     sampling_columns = df.filter(regex = "rep").columns.to_list()
     
     all_summary_dataframes = []
-    all_rh_dataframes = []
     all_inf_ibx, all_inf_rh = [], []
     all_ibx_dist_dict = {}
 
@@ -545,17 +545,20 @@ save_ibx_distributions=True):
 
         nested_dict = identify_nested_comparisons(sampling_df, sampling_column, config = subpop_config)
 
-        # Get base summary statistics
-        summary_stats = process_nested_summaries(nested_dict, sampling_df, comprehensive_group_summary)
-        summary_stats.insert(0, 'sampling_scheme', sampling_column)
+        timescale_groupings = [k for k in nested_dict.keys() if k in ['group_year', 'group_month','season_bins']]
+        subpopulation_groupings = [k for k in nested_dict.keys() if k not in timescale_groupings]
 
         # Handle potential month level calculations separately for metrics; i.e. do not run for relatedness metrics (computational consideration)
         nested_dict_no_month = {k:v for k,v in nested_dict.items() if k != 'group_month'}.copy()
+
+        # Get base summary statistics
+        summary_stats = process_nested_summaries(nested_dict, sampling_df, comprehensive_group_summary)
+        summary_stats.insert(0, 'sampling_scheme', sampling_column)
         
         # Process Fws calculations if specified        
         if fws_calculation:
             fws_stats = process_nested_fws(nested_dict_no_month, sampling_df)
-            if 'group_month' in nested_dict.keys():
+            if 'group_month' in timescale_groupings:
                 fws_stats_month = process_nested_fws({'group_month': nested_dict['group_month']}, sampling_df)
                 fws_stats = pd.concat([fws_stats, fws_stats_month], ignore_index=True)
 
@@ -571,12 +574,17 @@ save_ibx_distributions=True):
             for ibx_category in user_ibx_categories:
                 ibx_dist_dict = {}
                 print(f"\nProcessing IBx category: {ibx_category}")
-                if 'group_year' in nested_dict.keys() or 'season_bins' in nested_dict.keys():
+
+                # check for multiple ibx timescales - yearly and seasonal
+                ibx_timescales = [t for t in timescale_groupings if t !='group_month']
+                for timescale in ibx_timescales:
+                    timescale_dict = {key: nested_dict[key] for key in nested_dict if key in [timescale, *subpopulation_groupings]}
+                    yearly_rh_df = pd.DataFrame()
                     try:
                         ibx_summary, ibx_inf, ibx_dist_dict = process_nested_ibx(
                             sampling_df,  
                             f'{ibx_category}_matrix', 
-                            nested_dict_no_month, 
+                            timescale_dict, 
                             ibx_prefix=ibx_category,
                             individual_ibx_calculation=individual_ibx_calculation,
                             save_ibx_distributions=save_ibx_distributions
@@ -590,37 +598,14 @@ save_ibx_distributions=True):
                                     continue    
                             
                             else:
-                                # Only run R_h for year or seasonal level comparisons - can expand to do this with all subpopulations later if needed.
-
-                                # Get all the distribution dictionaries for H_mono bootstrap calculations
-                                monogenomic_dict = {k[0]:v for k,v in ibx_dist_dict['polygenomic'].items() if k[1]==False}
-
-                                subpopulation_keys = [x for x in nested_dict.keys() if x in ['group_year', 'season_bins']]
-
-                                for key in subpopulation_keys:
-                                    subpopulation_dict = nested_dict[key] 
-                                    yearly_rh_df = pd.DataFrame()
-                                    for sub_key, sub_data in subpopulation_dict.items():
-                                        year_df = sampling_df[sampling_df['infIndex'].isin(sub_data)]  
-                                        year_df = year_df.merge(pd.DataFrame(ibx_inf), on='infIndex', how='left')
-
-                                        if sub_key in monogenomic_dict.keys():
-                                            rh_summary, sample_rh = calculate_population_rh(year_df, monogenomic_dict[sub_key])
-
-                                            rh_summary['comparison_type'] = key  
-                                            rh_summary['year_group'] = str(sub_key)
-                                            rh_summary['subgroup'] = None
-                                            yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
-
-                                            # Rename columns to indicate the sampling scheme for individual infections; will be used to confirm partner Rh groupings
-                                            new_columns = [
-                                                f"{sampling_column}-{col}" if 'rh' in col else col
-                                                for col in sample_rh.columns
-                                            ]
-                                            sample_rh.columns = new_columns
-                                            all_inf_rh.append(sample_rh)
+                                rh_summary, sample_rh = process_nested_rh(timescale_dict, sampling_df, ibx_dist_dict, ibx_inf)
    
-                                    summary_stats = summary_stats.merge(yearly_rh_df, on=['comparison_type', 'year_group', 'subgroup'], how='left')
+                                yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+                                all_inf_rh.append(sample_rh) 
+                                
+                                print(summary_stats.head())
+                                print(yearly_rh_df)
+                                summary_stats = summary_stats.merge(yearly_rh_df, on=['comparison_type', 'year_group', 'subgroup'], how='left')
 
                         if ibx_dist_dict:
                             if ibx_category not in all_ibx_dist_dict:
@@ -978,4 +963,50 @@ def calculate_population_rh(df, monogenomic_dict, n_mono_boostraps=200):
     return rh_measurements, poly_samples[['infIndex', 'individual_inferred_rh']]
 
 
+def process_nested_rh(nested_dict, sampling_df, ibx_dist_dict, inf_ibx):
+    """
+    Calculate R_h for nested comparison groups.
+    """
+
+    # Get all the distribution dictionaries for H_mono bootstrap calculations
+    monogenomic_dict = {k[0]:v for k,v in ibx_dist_dict['polygenomic'].items() if k[1]==False}
+
+    timescale_keys = [x for x in nested_dict.keys() if x in ['group_year', 'season_bins']]
+    subpopulation_keys = [x for x in nested_dict.keys() if x not in ['group_year', 'season_bins', 'polygenomic']]
+
+    yearly_rh_df = pd.DataFrame()
+    all_inf_rh = []
+    for key in timescale_keys:
+        timescale_dict = nested_dict[key] 
+        for year, sub_data in timescale_dict.items():
+            year_df = sampling_df[sampling_df['infIndex'].isin(sub_data)]  
+            year_df = year_df.merge(pd.DataFrame(inf_ibx), on='infIndex', how='left')
+
+            if year in monogenomic_dict.keys():
+                rh_summary, sample_rh = calculate_population_rh(year_df, monogenomic_dict[year])
+
+                rh_summary['comparison_type'] = key  
+                rh_summary['year_group'] = str(year)
+                rh_summary['subgroup'] = None
+                yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+
+                # Handle subpopulation comparisons within the year
+                # Note: This likely needs updating in the future to be more subpopulation specific - the monogenomic distribution is from the total population; so this is measuring an RH difference from the overall population to the subgroup - would need to refactor this to take in IBx distributions per subgroup only. 
+                if len(subpopulation_keys) > 0:
+                    for subpop_key in subpopulation_keys:
+                        group_data = nested_dict[subpop_key]
+                        for sub_key, subgroup in group_data.items():
+                            if isinstance(sub_key, tuple):
+                                key_year, subgroup = sub_key
+                                if str(key_year) == str(year):
+                                    subpop_df = sampling_df[sampling_df['infIndex'].isin(group_data[sub_key])]
+                                    rh_summary, __ = calculate_population_rh(subpop_df, monogenomic_dict[year])
+
+                                    rh_summary['comparison_type'] = subpop_key  
+                                    rh_summary['year_group'] = str(key_year)
+                                    rh_summary['subgroup'] = str(subgroup)
+
+                                    yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+
+    return yearly_rh_df, sample_rh
     
