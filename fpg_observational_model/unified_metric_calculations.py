@@ -141,14 +141,15 @@ def _comprehensive_stats(series, prefix):
     """Calculate comprehensive statistics with given prefix."""
     # Add length check
     if len(series) <= 1:
+        val= series.iloc[0] if len(series) == 1 else np.nan
         return pd.Series({
-            f'{prefix}_mean': np.nan,
-            f'{prefix}_median': np.nan,
-            f'{prefix}_std': np.nan,
-            f'{prefix}_q25': np.nan,
-            f'{prefix}_q75': np.nan,
-            f'{prefix}_min': np.nan,
-            f'{prefix}_max': np.nan
+            f'{prefix}_mean': val,
+            f'{prefix}_median': val,
+            f'{prefix}_std': 0.0,
+            f'{prefix}_q25': val,
+            f'{prefix}_q75': val,
+            f'{prefix}_min': val,
+            f'{prefix}_max': val
         })
     
     stats = series.describe()
@@ -199,6 +200,7 @@ def _analyze_genome_ids(series, prefix):
         f'{prefix}_unique': unique_genomes,
         f'{prefix}_unique_prop': unique_prop
         }
+
 
 def _empty_comprehensive_summary():
     """Return comprehensive summary with NaN/0 values for empty groups."""
@@ -334,15 +336,16 @@ def weighted_describe_scipy(summary_dict, ibx_prefix):
             f'{ibx_prefix}_max': round(np.max(expanded_values), 3)
         }
     else:
+        val = expanded_values[0]
         summary_data = {        
             f'{ibx_prefix}_count': int(count),
-            f'{ibx_prefix}_mean': np.nan,
-            f'{ibx_prefix}_std': np.nan, 
-            f'{ibx_prefix}_q25': np.nan,
-            f'{ibx_prefix}_median': np.nan,
-            f'{ibx_prefix}_q75': np.nan,
-            f'{ibx_prefix}_min': np.nan,
-            f'{ibx_prefix}_max': np.nan
+            f'{ibx_prefix}_mean': val,
+            f'{ibx_prefix}_std': 0.0, 
+            f'{ibx_prefix}_q25': val,
+            f'{ibx_prefix}_median': val,
+            f'{ibx_prefix}_q75': val,
+            f'{ibx_prefix}_min': val,
+            f'{ibx_prefix}_max': val
     }
     return pd.DataFrame([summary_data]) 
 
@@ -357,7 +360,7 @@ def process_nested_summaries(nested_indices, sampling_df, comprehensive_group_su
     def add_summary(indices, comparison_type, year_group, subgroup=None):
         group_subset = sampling_df[sampling_df['infIndex'].isin(indices)]
         summary = comprehensive_group_summary(group_subset)
-        
+  
         if isinstance(summary, pd.Series):
             summary_dict = summary.to_dict()
         else:
@@ -365,7 +368,7 @@ def process_nested_summaries(nested_indices, sampling_df, comprehensive_group_su
             
         summary_dict.update({
             'comparison_type': comparison_type,
-            'year_group': str(year_group) if comparison_type not in ['group_month', 'seasonal_bins'] else None,
+            'year_group': str(year_group) if comparison_type not in ['group_month'] else None,
             'month_group': str(year_group) if 'group_month' in comparison_type else None,
             'subgroup': str(subgroup) if subgroup is not None else None
         })
@@ -940,7 +943,7 @@ def run_time_summaries(sample_df,
         # Get base summary statistics
         summary_stats = process_nested_summaries(nested_dict, sampling_df, comprehensive_group_summary)
         summary_stats.insert(0, 'sampling_scheme', sampling_column)
-        
+
         # Process Fws calculations if specified        
         if fws_calculation:
             fws_stats = pd.DataFrame()
@@ -1042,10 +1045,10 @@ def run_time_summaries(sample_df,
         print(f"Final summary for {sampling_column}: {summary_stats.shape}")   
 
     if not all_inf_ibx.empty:
-        inf_ibx_summary = pd.DataFrame()
+        inf_ibx_summary_df = pd.DataFrame()
         for ibx_category in user_ibx_categories:
             within_inf_summary = process_individual_ibx(nested_dict, all_inf_ibx, ibx_category)
-            inf_ibx_summary = pd.merge([inf_ibx_summary, within_inf_summary], on=['comparison_type', 'year_group', 'subgroup'], how='outer') if not inf_ibx_summary.empty else within_inf_summary
+            inf_ibx_summary_df = pd.merge([inf_ibx_summary_df, within_inf_summary], on=['comparison_type', 'year_group', 'subgroup'], how='outer') if not inf_ibx_summary_df.empty else within_inf_summary
         all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
         all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
     else:
@@ -1054,9 +1057,9 @@ def run_time_summaries(sample_df,
 
     if all_summary_dataframes:
         final_summary = pd.concat(all_summary_dataframes, ignore_index=True)
-        if not inf_ibx_summary.empty:
+        if not inf_ibx_summary_df.empty:
             final_summary = final_summary.merge(
-                inf_ibx_summary, 
+                inf_ibx_summary_df, 
                 on=['comparison_type', 'year_group', 'subgroup'], 
                 how='left'
             )
