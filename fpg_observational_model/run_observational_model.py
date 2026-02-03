@@ -37,14 +37,14 @@ def get_default_config():
                     'monogenomic_proportion': False, # Set to False if sampling randomly 
                     'equal_monthly': False}
             },
-            'seasonal': {
-                'method': 'seasonal',
-                'n_samples_year': 100,
-                'replicates': 2,
-                'method_params': {
-                    'season': 'full', # Options: full or peak; currently hardcoded to match Senegal's seasonality; update for other scenarios in unified_sampling.py
-                }
-            },
+            # 'seasonal': {
+            #     'method': 'seasonal',
+            #     'n_samples_year': 100,
+            #     'replicates': 2,
+            #     'method_params': {
+            #         'season': 'full', # Options: full or peak; currently hardcoded to match Senegal's seasonality; update for other scenarios in unified_sampling.py
+            #     }
+            # },
             # 'age': { # Example of how to set-up a sampling scheme based on age, to mirror biased sampling such as school surveys and health facility comparisons. 
             #     'method': 'age',
             #     'n_samples_year': 15,
@@ -403,12 +403,17 @@ def run_observational_model(
     user_specified_ibx = []
     ibd_matrix = None
     ibs_matrix = None
+    # Optional - included if need to filter out non-variant tracked sites, i.e. immunity markers or drugR for calculating genetic metrics only on neutral variant sites.
+    variant_indices = None
+    #variant_indices = [0, 3, 5, 6, 8, 9, 11, 12, 14, 16, 17, 19, 20, 22, 24, 25, 27, 28, 30, 32, 33, 35, 37, 38, 40, 42, 43, 45, 47, 48, 50, 52, 53, 55, 57, 58, 60, 62, 63, 65, 67, 68, 69, 71, 73, 75, 77, 78, 79, 80, 82, 84, 86, 88, 89, 90, 91, 93, 94, 96, 98, 99, 101, 102, 103, 104, 106, 107, 109, 110, 112, 113, 115, 116, 117, 118, 119, 121, 122, 124, 125, 127, 128, 130, 131, 132, 133, 134, 135, 137, 138, 139, 141, 142, 144, 145, 146, 148, 149, 150]
 
     if config['metrics']['identity_by_descent']:
         user_specified_ibx.append('ibd')
         root_matrix_path = f'{emod_output_path}/roots.npy'
         if os.path.exists(root_matrix_path):
             ibd_matrix = load_matrix_safely(root_matrix_path)
+            if variant_indices is not None and len(variant_indices) > 0:
+                ibd_matrix = ibd_matrix[:, variant_indices]
             register_matrix('ibd_matrix', ibd_matrix)
         else:
             print(f"Warning: {root_matrix_path} not found, IBD calculations will be skipped")
@@ -420,6 +425,8 @@ def run_observational_model(
      
         if os.path.exists(genotype_matrix_path):
             ibs_matrix = load_matrix_safely(genotype_matrix_path)
+            if variant_indices is not None and len(variant_indices) > 0:
+                ibs_matrix = ibs_matrix[:, variant_indices]
         else:
             print(f"Error: {genotype_matrix_path} not found. Loading test data.")
             ibs_matrix = np.load("../test_data/variants.npy", mmap_mode='r')
