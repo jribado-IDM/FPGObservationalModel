@@ -26,6 +26,7 @@ yum -y install \
     python3-devel \
     mpich \
     snappy \
+    snappy-devel \
     glibc-devel \
     epel-release \
     wget \
@@ -52,9 +53,15 @@ export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/lib64/mpich/lib
 
 # make the PIP index configurable so we can build against staging, production, or a local PyPI server
 
-# Install the packages
+# Install snappy
+pip3 install --no-cache-dir "python-snappy==0.6.1"
+
+# Install the ObsModel packages
 # RUN bash -c "pip3 install -r /tmp/requirements.txt"
-pip3 install --no-cache-dir fpg-observational-model --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
+pip3 install --no-cache-dir "fpg-observational-model==1.0.0.dev3" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
+
+# Install the emod_api package
+pip3 install --no-cache-dir "emod-api>=1.33.7,<2" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 
 %environment
 export TZ=UTC
