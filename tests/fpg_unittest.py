@@ -82,7 +82,7 @@ except ImportError as e:
 try:
     from fpg_observational_model.run_observational_model import (
         extract_sampled_infections,
-        update_matrix_indices
+        update_matrix_indices,
     )    
     HELPER_IMPORTED = True
 except ImportError as e:
@@ -1135,7 +1135,7 @@ class TestRunSampling(unittest.TestCase):
 
         samples = self.config['sampling_configs']['random']['n_samples_year']
         replicates = self.config['sampling_configs']['random']['replicates']
-        expected_cols = [f'random_{samples}_rep{i+1}' for i in range(replicates)]
+        expected_cols = [f'random_random_{samples}_rep{i+1}' for i in range(replicates)]
         for col in expected_cols:
             self.assertIn(col, sampled_infections.columns)
         
@@ -1554,8 +1554,14 @@ class TestIdentityByState(unittest.TestCase):
 
         unweighted = round(pd.Series(test_ibx_values).describe(), 3).to_frame().T.add_prefix('ibs_')
         weighted   = weighted_describe_scipy(test_ibx_dict, "ibs")
+        # Rename weighted to match unweighted format
+        weighted_renamed = weighted.rename(columns={
+            'ibs_q25': 'ibs_25%',
+            'ibs_median': 'ibs_50%',
+            'ibs_q75': 'ibs_75%'
+        })[unweighted.columns]
 
-        self.assertTrue(np.allclose(unweighted.values, weighted.values))
+        self.assertTrue(np.allclose(unweighted.values, weighted_renamed.values))
 
     def test_calculate_ibx_matrix_with_idm(self):
         """Test IBx matrix calculation with idm module"""
