@@ -10,12 +10,18 @@ This repository contains scripts for EMOD's Full Parasite Genetics output to con
 
 ## Environment set-up
 
-This model requires Pytohn 3.9 to be compatible with IDM tskit. To set up the environment.
+This model requires Python 3.9 to be compatible with IDM tskit. To set up the environment.
 
 ~~~
 python3 -m venv fpg_env
 source fpg_env/bin/activate
 pip install -r requirements.txt
+~~~
+
+Alternatively, IDM prebuilt environments are also available.
+
+~~~
+python3 -m pip install .[dev] --index-url=https://packages.idmod.org/api/pypi/pypi-production/simple
 ~~~
 
 ## Config Parameters
@@ -55,7 +61,7 @@ There are three broad method options for sampling:
     - 'monogenomic_proportion': False or float for true (< 1). Will bias the sampling to include fewer or more monogenomic infections than may be the Bool modeled proportion. Used to compare the effect of metrics derived from monogenomic (e.g. unique proportion) or polygenomic samples (e.g. co-transmission proportion, Rh)
     - 'equal_monthly': Bool. Sample the same number of infections per month, regardless of seasonality. If the total number of samples requested is lower than the available, the remainder samples are not applied to other parts of the season. 
 
-2) 'seasonal': Will sample N infections per year, each in the wet or the dry season to compare temporal sampling effects. Currently, the model is set-up for the consistent seasonality in Senegal, must update for other simulation scenarios. If an intervention start time is provided, this sampling frame is unaffected - the simulation years and months are used to make sure sequential seasonal groupings. Can be further refined with following 'method_params' options:
+2) 'seasonal': Will sample N infections per year, each in the wet or the dry season to compare temporal sampling effects. Currently, the model is set-up for the consistent Sahelian seasonality, must update for other seasonality simulation scenarios. If an intervention start time is provided, this sampling frame is unaffected - the simulation years and months are used to make sure sequential seasonal groupings. Can be further refined with following 'method_params' options:
     - 'season': 'full' for all months in the wet or dry season or 'peak' for the 3 highest and lowest case months. Months for sampling are hardcoded for both full and peak season options.  
 
 3) 'age': Will sample N infections per year, but will direct which age individuals are presented most in the population regardless of age distribution specified in the model. Use for comparing sampling schemes based on age, e.g. mirror biased sampling such as school surveys. Can be further customized with following 'method_params' options:
@@ -109,7 +115,7 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'barcode_with_Ns': Barcode string for each infection. Polygenomic infections with any discordant alleles within any genome as assigned N at each discordant position.
 - 'heterozygosity': List of heterozygosity calculated as 1 - (p^2 + q^2), where p is the reference and q is the alternative allele for each variant position.
 - '{ibd/ibs}_{count,mean,std,min,25,50,75,max}: Individual infection relatedness for polygenomic infections
-- {sampling_name}_{n_samples}_rep{1...N replicates}-individual_inferred_rh: Individual level Rh comparisons for each sampling scheme. Provided as individual columns in case infections are sampled across different sampling frames. 
+- {sampling_name}_{sampling_method}_{n_samples}_rep{1...N replicates}-individual_inferred_rh: Individual level Rh comparisons for each sampling scheme. Provided as individual columns in case infections are sampled across different sampling frames. 
 
 
 ``{sim_id}_FPG_ModelSummaries.csv``: File containing the genetic metrics across columns and the years, season, and subpopulation comparisons as columns. Addition of summary statistic columns can vary based on user options for metric calculations. 
@@ -129,11 +135,11 @@ This section defines with genetic metrics will be calculated for each set as boo
 - 'mono_genomes_ids_unique_prop': The proportion of unique genomes in all genomes from infections per grouping, measured only from monogenomic infections that are inherently phased. Calculated as 'mono_genomes_unique_count'/'mono_genomes_total_count'.
 - 'cotransmission_count': The number of infections per grouping with a COI > 2 and from a single mosquito biting event. 
 - 'cotransmission_prop': The proportion of co-transmission infections within polygenomic infections. Calculated as 'cotransmission_count'/'effective_poly_coi_count'.
-- '{true/effective/genotype}_coi_{mean,median,std,min,q25,75,max}': Full summary statistics for the COI distribution of infections in a grouping. 
-- '{ibd/ibs}_{pairwise_count,mean,median,std,min,q25,75,max}': Full population level summary statistics for the relatedness distribution of infections in a grouping.
+- '{true/effective/genotype}_coi_{mean,median,std,q25,75,min,max}': Full summary statistics for the COI distribution of infections in a grouping. 
+- '{pop/ind}-{ibd/ibs}_{pairwise_count,mean,median,std,q25,75,min,max}': Full population level summary statistics for the relatedness distribution of infections in a grouping. 'Pop' prefix denotes relatedness from all genomes within and between individuals in a grouping, while 'ind' prefix denotes relatedness within individuals with a polygenomic infection but summarized across polygenomic infections in a grouping. 
 - 'allele_frequencies': List of the alternative allele frequency in infections for all phased genomes from infections per grouping.
 - 'heterozygosity_per_position': Heterozygosity calculated for all phased genomes from infections per grouping. Assumption that each allele in the infection is proportional to the the number of strains containing that genotype (i.e. each genome produces a single read count per infection for each allele, and total read counts are the sum of the genomes in the infection). 
-- 'fws_{pairwise_count,mean,median,std,min,q25,75,max}': Summary statistics for within host diversity (F_ws) according to the method devised in  Manske et.al, 2012. 
+- 'fws_{mean,median,std,min,q25,75,max}': Summary statistics for within host diversity (F_ws) according to the method devised in  Manske et.al, 2012. 
 - 'rh_inferred_{mean,median,std}': Summary statistics for the inferred Rh from polygenomic infections, bootstrapping the monogenomic Rh. 
 
 
