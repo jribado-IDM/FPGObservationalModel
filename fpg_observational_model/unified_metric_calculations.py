@@ -139,22 +139,38 @@ def comprehensive_group_summary(group):
 
 def _comprehensive_stats(series, prefix):
     """Calculate comprehensive statistics with given prefix."""
-    poly_mask = series > 1
-    count = poly_mask.sum()
-    prop  = round(count / len(series), 3)
+    # Add length check
+    if len(series) <= 1:
+        val= series.iloc[0] if len(series) == 1 else np.nan
+        return pd.Series({
+            f'{prefix}_mean': val,
+            f'{prefix}_median': val,
+            f'{prefix}_std': 0.0,
+            f'{prefix}_q25': val,
+            f'{prefix}_q75': val,
+            f'{prefix}_min': val,
+            f'{prefix}_max': val
+        })
     
     stats = series.describe()
-    return pd.Series({
-        f'{prefix}_poly_count': count,
-        f'{prefix}_poly_prop': round(prop, 3),
+    result = {
         f'{prefix}_mean': round(stats['mean'], 3),
         f'{prefix}_median': round(stats['50%'], 3),
         f'{prefix}_std': round(stats['std'], 3),
-        f'{prefix}_min': round(stats['min'], 3),
-        f'{prefix}_max': round(stats['max'], 3),
         f'{prefix}_q25': round(stats['25%'], 3),
-        f'{prefix}_q75': round(stats['75%'], 3)
-    })
+        f'{prefix}_q75': round(stats['75%'], 3),
+        f'{prefix}_min': round(stats['min'], 3),
+        f'{prefix}_max': round(stats['max'], 3)
+    }
+
+    if any(x in prefix for x in ['coi', 'true', 'effective', 'genotype']):
+        poly_mask = series > 1
+        count = poly_mask.sum()
+        result[f'{prefix}_poly_count'] = count
+        result[f'{prefix}_poly_prop'] = round(count / len(series), 3)
+
+    return pd.Series(result)
+
 
 def _analyze_binary_in_subset(series, prefix):
     """Analyze binary column within a subset defined by mask."""
@@ -163,7 +179,7 @@ def _analyze_binary_in_subset(series, prefix):
     
     mask = series == 1 
     count = mask.sum()
-    prop = count / len(series)
+    prop = round(count / len(series), 3)
     
     return {f'{prefix}_count': count, f'{prefix}_prop': prop}    
 
@@ -184,6 +200,7 @@ def _analyze_genome_ids(series, prefix):
         f'{prefix}_unique': unique_genomes,
         f'{prefix}_unique_prop': unique_prop
         }
+
 
 def _empty_comprehensive_summary():
     """Return comprehensive summary with NaN/0 values for empty groups."""
@@ -306,20 +323,30 @@ def weighted_describe_scipy(summary_dict, ibx_prefix):
     
     # Now use standard numpy/pandas functions
     count = len(expanded_values)
-    mean = np.mean(expanded_values)
-    std = np.std(expanded_values, ddof=1)  # Use ddof=1 for sample std to match pandas
     
-    summary_data = {
-        f'{ibx_prefix}_count': int(count),
-        f'{ibx_prefix}_mean': round(mean, 3),
-        f'{ibx_prefix}_std': round(std, 3),
-        f'{ibx_prefix}_min': round(np.min(expanded_values), 3),
-        f'{ibx_prefix}_25%': round(np.percentile(expanded_values, 25), 3),
-        f'{ibx_prefix}_50%': round(np.median(expanded_values), 3),
-        f'{ibx_prefix}_75%': round(np.percentile(expanded_values, 75), 3),
-        f'{ibx_prefix}_max': round(np.max(expanded_values), 3)
+    if count > 1:
+        summary_data = {
+            f'{ibx_prefix}_count': int(count),
+            f'{ibx_prefix}_mean': round(np.mean(expanded_values), 3),
+            f'{ibx_prefix}_std': round(np.std(expanded_values, ddof=1), 3), # Use ddof=1 for sample std to match pandas
+            f'{ibx_prefix}_q25': round(np.percentile(expanded_values, 25), 3),
+            f'{ibx_prefix}_median': round(np.median(expanded_values), 3),
+            f'{ibx_prefix}_q75': round(np.percentile(expanded_values, 75), 3),
+            f'{ibx_prefix}_min': round(np.min(expanded_values), 3),
+            f'{ibx_prefix}_max': round(np.max(expanded_values), 3)
+        }
+    else:
+        val = expanded_values[0]
+        summary_data = {        
+            f'{ibx_prefix}_count': int(count),
+            f'{ibx_prefix}_mean': val,
+            f'{ibx_prefix}_std': 0.0, 
+            f'{ibx_prefix}_q25': val,
+            f'{ibx_prefix}_median': val,
+            f'{ibx_prefix}_q75': val,
+            f'{ibx_prefix}_min': val,
+            f'{ibx_prefix}_max': val
     }
-    
     return pd.DataFrame([summary_data]) 
 
 
@@ -333,7 +360,7 @@ def process_nested_summaries(nested_indices, sampling_df, comprehensive_group_su
     def add_summary(indices, comparison_type, year_group, subgroup=None):
         group_subset = sampling_df[sampling_df['infIndex'].isin(indices)]
         summary = comprehensive_group_summary(group_subset)
-        
+  
         if isinstance(summary, pd.Series):
             summary_dict = summary.to_dict()
         else:
@@ -341,7 +368,7 @@ def process_nested_summaries(nested_indices, sampling_df, comprehensive_group_su
             
         summary_dict.update({
             'comparison_type': comparison_type,
-            'year_group': str(year_group) if 'group_year' in comparison_type else None,
+            'year_group': str(year_group) if comparison_type not in ['group_month'] else None,
             'month_group': str(year_group) if 'group_month' in comparison_type else None,
             'subgroup': str(subgroup) if subgroup is not None else None
         })
@@ -393,10 +420,10 @@ def inf_ibx_summary(ibx_matrix, ibx_indices):
     
 
 def process_nested_ibx(df, gt_matrix, nested_indices, 
-ibx_prefix,
-individual_ibx_calculation=True,
-save_ibx_distributions=True,
-save_pairwise_ibx=False):
+    ibx_prefix,
+    individual_ibx_calculation=True,
+    save_ibx_distributions=True,
+    save_pairwise_ibx=False):
     """
     Calculate IBx for nested comparison groups.
     
@@ -411,14 +438,14 @@ save_pairwise_ibx=False):
         DataFrame with summary statistics for each group/subgroup
     """
 
+    all_year_indices = None
     if 'group_year' in nested_indices.keys():
         all_year_indices = nested_indices['group_year']
 
-    if 'group_month' in nested_indices.keys():
-        all_year_indices = nested_indices['group_month']    
-
     if 'season_bins' in nested_indices.keys():
         all_year_indices = nested_indices['season_bins']
+    else:
+        nested_subpopulations = {k:v for k,v in nested_indices.items() if k not in ['group_year', 'season_bins']} 
 
     ibx_dist_dict, individual_ibx_dict = {}, {}
     ibx_summ_list = []
@@ -451,31 +478,31 @@ save_pairwise_ibx=False):
         ibx_mapping = dict(zip(ibx_indices['ibx_nid'], ibx_indices['ibx_index']))
         year_subset['ibx_index'] = year_subset['ibx_nid'].apply(lambda nid_list: [ibx_mapping[nid] for nid in nid_list] if isinstance(nid_list, list) else None)
         
-        # Step 2: Run IBx summaries for nested groups within each year
-        for comparison_group, group_data in nested_indices.items():
+        # Step 2: Run IBx summaries for each years
+        for comparison_group, group_data in nested_indices.items():    
             if comparison_group in ['group_year', 'season_bins']:
                 # Simple year-level calculation
                 indices = list(chain.from_iterable(year_subset['ibx_index'].tolist())) 
 
                 if isinstance(indices, list) and len(indices) > 1:
                     distribution = ibx_distribution(indices, ibx_matrix)
-                    summary_stats = weighted_describe_scipy(distribution, ibx_prefix)
-                    
-                    # Add metadata columns
-                    result_row = summary_stats.iloc[0].to_dict()
-                    result_row['comparison_type'] = comparison_group
-                    result_row['year_group'] = year
-                    result_row['subgroup'] = None
+                    summary_stats = weighted_describe_scipy(distribution, f"pop-{ibx_prefix}")
+                        
+                    result_row = {
+                        'comparison_type': comparison_group,
+                        'year_group': year,
+                        'subgroup': None
+                    }
+                    result_row.update(summary_stats.iloc[0].to_dict())
                     ibx_summ_list.append(result_row)
 
                     if save_ibx_distributions:
                         if comparison_group not in ibx_dist_dict:
                             ibx_dist_dict[comparison_group] = {}
-                        # FIXED: Remove the if condition, just assign
                         ibx_dist_dict[comparison_group][year] = distribution
 
-            else:
-                # Handle nested groups
+            else:   
+                # Within year nested subgroup calculations 
                 for key, nested_data in group_data.items():
                     if isinstance(key, tuple):
                         key_year, subgroup = key
@@ -483,16 +510,18 @@ save_pairwise_ibx=False):
                             if isinstance(nested_data, list) and len(nested_data) > 1:
                                 subset_df = year_subset[year_subset['infIndex'].isin(nested_data)]
                                 if not subset_df.empty:
-                                    subgroup_ibx_indices = list(chain.from_iterable(subset_df['ibx_index'].tolist()))
-
-                                    if subgroup_ibx_indices and len(subgroup_ibx_indices) > 1:
-                                        distribution = ibx_distribution(subgroup_ibx_indices, ibx_matrix)
-                                        summary_stats = weighted_describe_scipy(distribution, ibx_prefix)
-                                        
-                                        result_row = summary_stats.iloc[0].to_dict()
-                                        result_row['comparison_type'] = comparison_group
-                                        result_row['year_group'] = year
-                                        result_row['subgroup'] = str(subgroup)
+                                    indices = list(chain.from_iterable(subset_df['ibx_index'].tolist()))
+                                    
+                                    if isinstance(indices, list) and len(indices) > 1:
+                                        distribution = ibx_distribution(indices, ibx_matrix)
+                                        summary_stats = weighted_describe_scipy(distribution, f"pop-{ibx_prefix}")
+                                            
+                                        result_row = {
+                                            'comparison_type': comparison_group,
+                                            'year_group': str(key_year),
+                                            'subgroup': str(subgroup)
+                                        }
+                                        result_row.update(summary_stats.iloc[0].to_dict())
                                         ibx_summ_list.append(result_row)
 
                                         if save_ibx_distributions:
@@ -500,7 +529,7 @@ save_pairwise_ibx=False):
                                                 ibx_dist_dict[comparison_group] = {}
                                             ibx_dist_dict[comparison_group][key] = distribution
             
-        # Step 3: Individual IBx calculations for polygenomic infections
+            # Step 3: Individual IBx calculations for polygenomic infections
             if individual_ibx_calculation:
                 polygenomic_subset = year_subset[year_subset['effective_coi'] > 1]
                 if not polygenomic_subset.empty:
@@ -521,154 +550,36 @@ save_pairwise_ibx=False):
         individual_ibx_df = pd.DataFrame()
 
     return ibx_results_df, individual_ibx_df, ibx_dist_dict
-               
 
-def run_time_summaries(sample_df,
-subpop_config = None,
-user_ibx_categories = None,
-individual_ibx_calculation=True,
-fws_calculation=True,
-rh_calculation=True,
-save_ibx_distributions=True):
+
+def process_individual_ibx(nested_dict, individual_ibx_df, ibx_prefix):
+    """ Merge individual IBx calculations back to the sampling dataframe based on nested comparison groups. """
+    if individual_ibx_df.empty:
+        print("No individual IBx data to process.")
+        return pd.DataFrame()
     
-    df = sample_df
-    sampling_columns = df.filter(regex = "rep").columns.to_list()
-    
-    all_summary_dataframes = []
-    all_rh_dataframes = []
-    all_inf_ibx, all_inf_rh = [], []
-    all_ibx_dist_dict = {}
-
-    for sampling_column in sampling_columns:
-        sampling_df = df[df[sampling_column].notna()]
-
-        nested_dict = identify_nested_comparisons(sampling_df, sampling_column, config = subpop_config)
-        print(f"Nested comparisons for {sampling_column}: {list(nested_dict.keys())}")
-
-        # Get base summary statistics
-        summary_stats = process_nested_summaries(nested_dict, sampling_df, comprehensive_group_summary)
-        summary_stats.insert(0, 'sampling_scheme', sampling_column)
-
-        # Process Fws calculations if specified
-        if fws_calculation:
-            fws_stats = process_nested_fws(nested_dict, sampling_df)
-            if not fws_stats.empty:
-                columns = ['comparison_type', 'year_group', 'month_group', 'subgroup']
-                merge_cols = [col for col in columns if col in fws_stats.columns]
-                summary_stats = summary_stats.merge(fws_stats, on=merge_cols, how='left')
-            else:
-                print(f"Warning: No Fws stats generated for {sampling_column}")
-
-        # Process IBx categories if they exist
-        nested_dict_no_month = {k:v for k,v in nested_dict.items() if k != 'group_month'}.copy()
-        if user_ibx_categories and len(user_ibx_categories) > 0: 
-            for ibx_category in user_ibx_categories:
-                ibx_dist_dict = {}
-                print(f"\nProcessing IBx category: {ibx_category}")
-                try:
-                    ibx_summary, ibx_inf, ibx_dist_dict = process_nested_ibx(
-                        sampling_df,  
-                        f'{ibx_category}_matrix', 
-                        nested_dict_no_month, 
-                        ibx_prefix=ibx_category,
-                        individual_ibx_calculation=individual_ibx_calculation,
-                        save_ibx_distributions=save_ibx_distributions
-                    )
-
-                    if rh_calculation and ibx_category == 'ibs':
-                        if 'polygenomic' not in nested_dict.keys():
-                            if len(sampling_df['effective_coi'].unique()) != 1:
-                                print("Warning: No polygenomic subpopulation comparisons found. Rerun IBx with polygenomic as a subpopulation comparisons.")
-                            else:
-                                continue    
-                        
-                        else:
-                            # Only run R_h for year or seasonal level comparisons - can expand to do this with all subpopulations later if needed.
-
-                            # Get all the distribution dictionaries for H_mono bootstrap calculations
-                            monogenomic_dict = {k[0]:v for k,v in ibx_dist_dict['polygenomic'].items() if k[1]==False}
-
-                            subpopulation_keys = [x for x in nested_dict.keys() if x in ['group_year', 'season_bins']]
-
-                            for key in subpopulation_keys:
-                                subpopulation_dict = nested_dict[key] 
-                                yearly_rh_df = pd.DataFrame()
-                                for sub_key, sub_data in subpopulation_dict.items():
-                                    year_df = sampling_df[sampling_df['infIndex'].isin(sub_data)]  
-                                    year_df = year_df.merge(pd.DataFrame(ibx_inf), on='infIndex', how='left')
-
-                                    if sub_key in monogenomic_dict.keys():
-                                        rh_summary, sample_rh = calculate_population_rh(year_df, monogenomic_dict[sub_key])
-
-                                        rh_summary['comparison_type'] = key  
-                                        rh_summary['year_group'] = str(sub_key)
-                                        rh_summary['subgroup'] = None
-                                        yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
-
-                                        # Rename columns to indicate the sampling scheme for individual infections; will be used to confirm partner Rh groupings
-                                        new_columns = [
-                                            f"{sampling_column}-{col}" if 'rh' in col else col
-                                            for col in sample_rh.columns
-                                        ]
-                                        sample_rh.columns = new_columns
-                                        all_inf_rh.append(sample_rh)
-
-                                summary_stats = summary_stats.merge(yearly_rh_df, on=['comparison_type', 'year_group', 'subgroup'], how='left')
-
-                    if ibx_dist_dict:
-                        if ibx_category not in all_ibx_dist_dict:
-                            all_ibx_dist_dict[ibx_category] = {}
-                        all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
-
-                    if not ibx_inf.empty:
-                        all_inf_ibx.append(ibx_inf)
-
-                    if not ibx_summary.empty:
-                        merge_keys = ['comparison_type', 'year_group', 'subgroup']
-                        available_keys = [key for key in merge_keys if key in summary_stats.columns and key in ibx_summary.columns]
-                        
-                        if available_keys:
-                            before_merge_cols = len(summary_stats.columns)
-                            summary_stats = summary_stats.merge(
-                                ibx_summary, 
-                                on=available_keys, 
-                                how='left'
-                            )
-                            after_merge_cols = len(summary_stats.columns)
-                            print(f"Merge successful: {before_merge_cols} -> {after_merge_cols} columns")
-                        else:
-                            print(f"WARNING: No common merge keys found for {ibx_category}")
-                    else:
-                        print(f"WARNING: Empty IBx summary for {ibx_category}")
-                        
-                except Exception as e:
-                    print(f"ERROR processing IBx category {ibx_category}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue              
-              
-            # Add final summary to collection
-            if ibx_category not in all_ibx_dist_dict:
-                all_ibx_dist_dict[ibx_category] = {}
-            all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
-
-        all_summary_dataframes.append(summary_stats)
-        print(f"Final summary for {sampling_column}: {summary_stats.shape}")
-
-    if all_inf_ibx:
-        all_inf_ibx_df = pd.concat(all_inf_ibx, ignore_index=True)
-        all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
-        all_inf_df = pd.merge(all_inf_ibx_df, all_inf_rh_df, on='infIndex', how='outer')
     else:
-        all_inf_df = pd.DataFrame()    
+        merged_df = pd.DataFrame()
+        for comparison_type, group_data in nested_dict.items():
+            if comparison_type not in ['group_month', 'polygenomic']:
+                for key, nested_data in group_data.items():
+                    subset_df = individual_ibx_df[individual_ibx_df['infIndex'].isin(nested_data)]
+                    if not subset_df.empty:
+                        if isinstance(key, tuple):
+                            key_year, subgroup = key
+                        else:
+                            key_year, subgroup = key, None    
 
-    if all_summary_dataframes:
-        final_summary = pd.concat(all_summary_dataframes, ignore_index=True)
-        print(f"FINAL concatenated summary: {final_summary.shape}")
-        print(f"FINAL columns: {list(final_summary.columns)}")
-        return final_summary, all_inf_df, all_ibx_dist_dict
-    else:
-        return pd.DataFrame(), pd.DataFrame(), {}
+                        result = _comprehensive_stats(subset_df[f"{ibx_prefix}_mean"], f"ind-{ibx_prefix}").to_dict()
+                        summary = {
+                            'comparison_type': comparison_type,
+                            'year_group': str(key_year),
+                            'subgroup': str(subgroup),
+                            **result
+                            }
+                        merged_df = pd.concat([merged_df, pd.DataFrame([summary])], ignore_index=True)            
+           
+        return merged_df
 
 
 #####################################################################################
@@ -737,6 +648,28 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
     Manske, Magnus, et al. "Analysis of Plasmodium falciparum diversity in natural infections by deep sequencing." Nature 487.7407 (2012): 375-379.
     """
     fws_stats_list = []
+
+    # Helper function for Fws calculation
+    def calc_fws_for_sample(sample_het_list):
+        sample_het = np.array(sample_het_list)
+        try:
+            sample_het_by_bin = pd.Series(sample_het).groupby(maf_bins).mean()
+            combined = pd.DataFrame({
+                'pop_het': group_het_by_bin,
+                'sample_het': sample_het_by_bin
+            }).dropna()
+            
+            if len(combined) == 0:
+                return np.nan
+            
+            X = combined['pop_het'].values.reshape(-1, 1)
+            y = combined['sample_het'].values
+            model = LinearRegression(fit_intercept=False)
+            model.fit(X, y)
+            fws = round(1 - model.coef_[0], 3)
+            return fws
+        except:
+            return np.nan
     
     # Get year-level indices (same as process_nested_ibx)
     if 'group_year' in nested_indices.keys():
@@ -746,8 +679,7 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
     elif 'season_bins' in nested_indices.keys():
         all_year_indices = nested_indices['season_bins']
     else:
-        print("Warning: No year-level indices found")
-        return pd.DataFrame()
+        nested_subpopulations = {k:v for k,v in nested_indices.items() if k not in ['group_year', 'group_month', 'season_bins']}
     
     # Process each year
     for year_key, year_indices in all_year_indices.items():
@@ -769,32 +701,12 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
         group_het = calculate_heterozygosity(matrix)
         maf_bins = pd.cut(group_af, bins=np.linspace(0, 0.5, 11), labels=False) + 1
         group_het_by_bin = pd.Series(group_het).groupby(maf_bins).mean()
-        
-        # Helper function for Fws calculation
-        def calc_fws_for_sample(sample_het_list):
-            sample_het = np.array(sample_het_list)
-            try:
-                sample_het_by_bin = pd.Series(sample_het).groupby(maf_bins).mean()
-                combined = pd.DataFrame({
-                    'pop_het': group_het_by_bin,
-                    'sample_het': sample_het_by_bin
-                }).dropna()
-                
-                if len(combined) == 0:
-                    return np.nan
-                
-                X = combined['pop_het'].values.reshape(-1, 1)
-                y = combined['sample_het'].values
-                model = LinearRegression(fit_intercept=False)
-                model.fit(X, y)
-                fws = round(1 - model.coef_[0], 3)
-                return fws
-            except:
-                return np.nan
+    
         
         # Process year-level and nested groups
         for comparison_type, group_data in nested_indices.items():
-            if comparison_type in ['group_year', 'group_month','season_bins']:
+            timescale = 'month' if 'group_month' == comparison_type else 'year'
+            if comparison_type in ['group_year', 'group_month', 'season_bins']:
                 # Year-level calculation
                 year_subset = year_subset.copy()
                 year_subset['fws'] = year_subset['heterozygosity'].apply(calc_fws_for_sample)
@@ -804,12 +716,10 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                     fws_summary = _comprehensive_stats(valid_fws, 'fws')
                     fws_stats_list.append({
                         'comparison_type': comparison_type,
-                        'year_group': str(year) if 'group_year' in comparison_type else None,
-                        'month_group': str(year) if 'group_month' in comparison_type else None,
+                        f'{timescale}_group': year,
                         'subgroup': None,
                         'allele_frequencies': np.round(group_af, 3).tolist(),
                         'heterozygosity_per_position': np.round(group_het, 3).tolist(),
-                        'n_samples': len(valid_fws),
                         **fws_summary.to_dict()
                     })
             else:
@@ -862,15 +772,13 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                                             fws_summary = _comprehensive_stats(valid_fws, 'fws')
                                             fws_stats_list.append({
                                                 'comparison_type': comparison_type,
-                                                'year_group': str(year) if 'group_year' in comparison_type else None,
-                                                'month_group': str(year) if 'group_month' in comparison_type else None,
+                                                f'{timescale}_group': str(key_year),
                                                 'subgroup': str(subgroup),
                                                 'allele_frequencies': np.round(subgroup_af, 3).tolist(),
                                                 'heterozygosity_per_position': np.round(subgroup_het, 3).tolist(),
-                                                'n_samples': len(valid_fws),
                                                 **fws_summary.to_dict()
                                             })
-    
+        
     if fws_stats_list:
         return pd.DataFrame(fws_stats_list)
     else:
@@ -881,23 +789,6 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
 #####################################################################################
 # Matching partner summary statistics
 #####################################################################################
-# Directly copied from available code for Rh metric paper - not needed for individual sims, but hold here since it's a cross simulation comparison metric. 
-# def inverse_var_weight(p_array, var_array):
-#     var_weighted_num= np.nansum(np.divide(p_array, 
-#                                               var_array, where=var_array!=0))
-#     var_weighted_denom = np.nansum(np.divide([1 for _ in var_array], 
-#                                                  var_array,where=var_array!=0))
-#     weighted_mean = var_weighted_num / var_weighted_denom
-    
-#     weighted_var = 1/np.sum(1/var_array)
-#     weighted_std = np.sqrt(weighted_var)
-#     weighted_ci = (weighted_mean - 1.96 * weighted_std,
-#                        weighted_mean + 1.96 * weighted_std)
-    
-    
-#     return weighted_mean, weighted_var, weighted_ci
-
-
 def sample_from_distribution(dist_dict, n_bootstraps = 200, exclude_keys=[1]):
     """ Unpacks the pairwise IBS distribution dictionary to sample from the distribution n times. Excluded keys are values that do not represent the distribution of interest - e.g. IBS=1 for identical barcodes since these would not be detected as a mixed infection. """
 
@@ -973,4 +864,206 @@ def calculate_population_rh(df, monogenomic_dict, n_mono_boostraps=200):
     return rh_measurements, poly_samples[['infIndex', 'individual_inferred_rh']]
 
 
+def process_nested_rh(nested_dict, sampling_df, ibx_dist_dict, inf_ibx):
+    """
+    Calculate R_h for nested comparison groups.
+    """
+
+    # Get all the distribution dictionaries for H_mono bootstrap calculations
+    monogenomic_dict = {k[0]:v for k,v in ibx_dist_dict['polygenomic'].items() if k[1]==False}
+
+    timescale_keys = [x for x in nested_dict.keys() if x in ['group_year', 'season_bins']]
+    subpopulation_keys = [x for x in nested_dict.keys() if x not in ['group_year', 'season_bins', 'polygenomic']]
+
+    yearly_rh_df = pd.DataFrame()
+    all_inf_rh = []
+    for key in timescale_keys:
+        timescale_dict = nested_dict[key] 
+        for year, sub_data in timescale_dict.items():
+            year_df = sampling_df[sampling_df['infIndex'].isin(sub_data)]  
+            year_df = year_df.merge(pd.DataFrame(inf_ibx), on='infIndex', how='left')
+
+            if year in monogenomic_dict.keys():
+                rh_summary, sample_rh = calculate_population_rh(year_df, monogenomic_dict[year])
+
+                rh_summary['comparison_type'] = key  
+                rh_summary['year_group'] = str(year)
+                rh_summary['subgroup'] = None
+                yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+
+                # Handle subpopulation comparisons within the year
+                # Note: This likely needs updating in the future to be more subpopulation specific - the monogenomic distribution is from the total population; so this is measuring an RH difference from the overall population to the subgroup - would need to refactor this to take in IBx distributions per subgroup only. 
+                if len(subpopulation_keys) > 0:
+                    for subpop_key in subpopulation_keys:
+                        group_data = nested_dict[subpop_key]
+                        for sub_key, subgroup in group_data.items():
+                            if isinstance(sub_key, tuple):
+                                key_year, subgroup = sub_key
+                                if str(key_year) == str(year):
+                                    subpop_df = sampling_df[sampling_df['infIndex'].isin(group_data[sub_key])]
+                                    rh_summary, __ = calculate_population_rh(subpop_df, monogenomic_dict[year])
+
+                                    rh_summary['comparison_type'] = subpop_key  
+                                    rh_summary['year_group'] = str(key_year)
+                                    rh_summary['subgroup'] = str(subgroup)
+
+                                    yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+
+    return yearly_rh_df, sample_rh
     
+
+
+################################################################################# Putting it all together
+################################################################################
+def run_time_summaries(sample_df,
+                        subpop_config = None,
+                        user_ibx_categories = None,
+                        individual_ibx_calculation=True,
+                        fws_calculation=True,
+                        rh_calculation=True,
+                        save_ibx_distributions=True):
+    
+    df = sample_df
+    sampling_columns = df.filter(regex = "rep").columns.to_list()
+    
+    all_summary_dataframes = []
+    all_inf_ibx = pd.DataFrame() 
+    all_inf_rh = []
+    all_ibx_dist_dict = {}
+
+    for sampling_column in sampling_columns:
+        sampling_df = df[df[sampling_column].notna()]
+
+        nested_dict = identify_nested_comparisons(sampling_df, sampling_column, config = subpop_config)
+
+        timescale_groupings = [k for k in nested_dict.keys() if k in ['group_year', 'group_month','season_bins']]
+        subpopulation_groupings = [k for k in nested_dict.keys() if k not in timescale_groupings]
+
+        # Get base summary statistics
+        summary_stats = process_nested_summaries(nested_dict, sampling_df, comprehensive_group_summary)
+        summary_stats.insert(0, 'sampling_scheme', sampling_column)
+
+        # Process Fws calculations if specified        
+        if fws_calculation:
+            fws_stats = pd.DataFrame()
+            for timescale in timescale_groupings:
+                timescale_dict = {key: nested_dict[key] for key in nested_dict if key in [timescale, *subpopulation_groupings]}
+
+                fws_stats_timescale = process_nested_fws(timescale_dict, sampling_df)
+                fws_stats = pd.concat([fws_stats, fws_stats_timescale], ignore_index=True)
+
+            if not fws_stats.empty:
+                columns = ['comparison_type', 'year_group', 'month_group', 'subgroup']
+                merge_cols = [col for col in columns if col in fws_stats.columns]
+                summary_stats = summary_stats.merge(fws_stats, on=merge_cols, how='left')
+            else:
+                print(f"Warning: No Fws stats generated for {sampling_column}")
+
+        # Process IBx categories if they exist
+        if user_ibx_categories and len(user_ibx_categories) > 0: 
+            for ibx_category in user_ibx_categories:
+                ibx_dist_dict = {}
+                print(f"\nProcessing IBx category: {ibx_category}")
+
+                # check for multiple ibx timescales - yearly and seasonal
+                # Comment out this line if month level ibx calculations are desired - will significantly increase computation time
+                ibx_timescales = [t for t in timescale_groupings if t !='group_month'] 
+                for timescale in ibx_timescales:
+                    timescale_dict = {key: nested_dict[key] for key in nested_dict if key in [timescale, *subpopulation_groupings]}
+                    yearly_rh_df = pd.DataFrame()
+                    try:
+                        ibx_summary, ibx_inf, ibx_dist_dict = process_nested_ibx(
+                            sampling_df,  
+                            f'{ibx_category}_matrix', 
+                            timescale_dict, 
+                            ibx_prefix=ibx_category,
+                            individual_ibx_calculation=individual_ibx_calculation,
+                            save_ibx_distributions=save_ibx_distributions
+                        )
+
+                        if rh_calculation and ibx_category == 'ibs':
+                            if 'polygenomic' not in nested_dict.keys():
+                                if len(sampling_df['effective_coi'].unique()) != 1:
+                                    print("Warning: No polygenomic subpopulation comparisons found. Rerun IBx with polygenomic as a subpopulation comparisons.")
+                                else:
+                                    continue    
+        
+                            else:
+                                rh_summary, sample_rh = process_nested_rh(timescale_dict, sampling_df, ibx_dist_dict, ibx_inf)
+   
+                                yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+                                all_inf_rh.append(sample_rh) 
+                                
+                                summary_stats = summary_stats.merge(yearly_rh_df, on=['comparison_type', 'year_group', 'subgroup'], how='left')
+
+                        if ibx_dist_dict:
+                            if ibx_category not in all_ibx_dist_dict:
+                                all_ibx_dist_dict[ibx_category] = {}
+                            all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
+
+                        if not ibx_inf.empty:
+                            existing_cols = [col for col in all_inf_ibx.columns if col.startswith(ibx_category)]
+    
+                            if len(existing_cols) > 0 or all_inf_ibx.empty:
+                                # Columns with this prefix exist -> concat rows
+                                all_inf_ibx = pd.concat([all_inf_ibx, ibx_inf], ignore_index=True)
+                            else:
+                                # New metric type -> merge columns
+                                all_inf_ibx = all_inf_ibx.merge(ibx_inf, on='infIndex', how='outer')    
+                            
+                        if not ibx_summary.empty:
+                            merge_keys = ['comparison_type', 'year_group', 'subgroup']
+                            available_keys = [key for key in merge_keys if key in summary_stats.columns and key in ibx_summary.columns]
+                            
+                            if available_keys:
+                                before_merge_cols = len(summary_stats.columns)
+                                summary_stats = summary_stats.merge(
+                                    ibx_summary, 
+                                    on=available_keys, 
+                                    how='left'
+                                )
+                                after_merge_cols = len(summary_stats.columns)
+                                print(f"Merge successful: {before_merge_cols} -> {after_merge_cols} columns")
+                            else:
+                                print(f"WARNING: No common merge keys found for {ibx_category}")
+                        else:
+                            print(f"WARNING: Empty IBx summary for {ibx_category}")
+                            
+                    except Exception as e:
+                        print(f"ERROR processing IBx category {ibx_category}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue              
+              
+            # Add final summary to collection
+            if ibx_category not in all_ibx_dist_dict:
+                all_ibx_dist_dict[ibx_category] = {}
+            all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
+
+        all_summary_dataframes.append(summary_stats)
+        print(f"Final summary for {sampling_column}: {summary_stats.shape}")   
+
+    if not all_inf_ibx.empty:
+        inf_ibx_summary_df = pd.DataFrame()
+        for ibx_category in user_ibx_categories:
+            within_inf_summary = process_individual_ibx(nested_dict, all_inf_ibx, ibx_category)
+            inf_ibx_summary_df = pd.merge([inf_ibx_summary_df, within_inf_summary], on=['comparison_type', 'year_group', 'subgroup'], how='outer') if not inf_ibx_summary_df.empty else within_inf_summary
+        all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
+        all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
+    else:
+        all_inf_df = pd.DataFrame() 
+
+
+    if all_summary_dataframes:
+        final_summary = pd.concat(all_summary_dataframes, ignore_index=True)
+        if not inf_ibx_summary_df.empty:
+            final_summary = final_summary.merge(
+                inf_ibx_summary_df, 
+                on=['comparison_type', 'year_group', 'subgroup'], 
+                how='left'
+            )
+        print(f"FINAL concatenated summary: {final_summary.shape}")
+        print(f"FINAL columns: {list(final_summary.columns)}")
+        return final_summary, all_inf_df, all_ibx_dist_dict
+    else:
+        return pd.DataFrame(), pd.DataFrame(), {}    
