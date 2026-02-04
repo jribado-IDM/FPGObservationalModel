@@ -4,6 +4,7 @@ from idmtools.core.platform_factory import Platform
 from idmtools_platform_comps.utils.singularity_build \
                                          import SingularityBuildWorkItem
 import os
+import re
 
 def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None,
                comps_url: str = 'https://comps.idmod.org', comps_env: str = 'Calculon', os_name: str = 'rocky'
@@ -28,6 +29,8 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
         warnings.warn("Both def_file_name and sif_file_name are provided. def_file_name will be used.")
         sif_file_name = None
 
+    version_info = {}
+
     # Create Singularity build work item
     if def_file_name is not None:
         # Check if the definition file exists
@@ -38,6 +41,29 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
                                             definition_file=def_file_name,
                                             image_name='ObsModel_'+os_name+'.sif',
                                             force=True)
+        # load the definition file content to get the version info for fpg-observational-model, emod-api, python-snappy if available
+        patterns = {
+            'fpg-observational-model': r'fpg-observational-model([=><!~]+[^\s"\'\,]+)',
+            'emod-api': r'emod-api([=><!~]+[^\s"\'\,]+(?:,[^\s"\'\,]+)*)',
+            'python-snappy': r'python-snappy([=><!~]+[^\s"\'\,]+)'
+        }
+        with open(def_file_name, 'r') as def_file:
+            for line in def_file:
+                for pkg, pat in patterns.items():
+                    if pkg in line:
+                        match = re.search(pat, line)
+                        if match:
+                            spec = match.group(1)
+                            if spec.startswith('=='):
+                                version_info[pkg] = spec[2:]
+                            else:
+                                version_info[pkg] = spec
+        if version_info:
+            print("Detected package versions in definition file:")
+            for pkg, ver in version_info.items():
+                print(f"  {pkg}: {ver}")
+        sbwi_obj.update_tags(version_info)
+
     elif sif_file_name is not None:
         # Check if the singularity file exists
         if not os.path.exists(sif_file_name):
@@ -51,6 +77,12 @@ def make_asset(def_file_name: str = 'Singularity.def', sif_file_name: str = None
 
     # Wait until the image is built
     ac_obj = sbwi_obj.run(wait_until_done=True, platform=plat_obj)
+
+    # Update asset with tage
+    if version_info:
+        ac_obj.update_tags(version_info)
+        result = plat_obj.create_items(ac_obj)
+
 
     # Save asset id for sif to file
     ac_obj.to_id_file('ObsModel_'+os_name+'.id')
