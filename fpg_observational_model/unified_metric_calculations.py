@@ -529,15 +529,15 @@ def process_nested_ibx(df, gt_matrix, nested_indices,
                                                 ibx_dist_dict[comparison_group] = {}
                                             ibx_dist_dict[comparison_group][key] = distribution
             
-            # Step 3: Individual IBx calculations for polygenomic infections
-            if individual_ibx_calculation:
-                polygenomic_subset = year_subset[year_subset['effective_coi'] > 1]
-                if not polygenomic_subset.empty:
-                    polygenomic_dict = dict(zip(polygenomic_subset['infIndex'], polygenomic_subset['ibx_index']))
+        # Step 3: Individual IBx calculations for polygenomic infections
+        if individual_ibx_calculation:
+            polygenomic_subset = year_subset[year_subset['effective_coi'] > 1]
+            if not polygenomic_subset.empty:
+                polygenomic_dict = dict(zip(polygenomic_subset['infIndex'], polygenomic_subset['ibx_index']))
 
-                    for inf_id, ibx_list in polygenomic_dict.items():
-                        distribution = ibx_distribution(ibx_list, ibx_matrix)
-                        individual_ibx_dict[inf_id] = weighted_describe_scipy(distribution, ibx_prefix) 
+                for inf_id, ibx_list in polygenomic_dict.items():
+                    distribution = ibx_distribution(ibx_list, ibx_matrix)
+                    individual_ibx_dict[inf_id] = weighted_describe_scipy(distribution, ibx_prefix) 
 
     if ibx_summ_list:
         ibx_results_df = pd.DataFrame(ibx_summ_list)
@@ -878,7 +878,7 @@ def process_nested_rh(nested_dict, sampling_df, ibx_dist_dict, inf_ibx):
     subpopulation_keys = [x for x in nested_dict.keys() if x not in ['group_year', 'season_bins', 'polygenomic']]
 
     yearly_rh_df = pd.DataFrame()
-    all_inf_rh = []
+    all_inf_rh = pd.DataFrame()
     for key in timescale_keys:
         timescale_dict = nested_dict[key] 
         for year, sub_data in timescale_dict.items():
@@ -892,6 +892,7 @@ def process_nested_rh(nested_dict, sampling_df, ibx_dist_dict, inf_ibx):
                 rh_summary['year_group'] = str(year)
                 rh_summary['subgroup'] = None
                 yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
+                all_inf_rh = pd.concat([all_inf_rh, sample_rh], ignore_index=True)
 
                 # Handle subpopulation comparisons within the year
                 # Note: This likely needs updating in the future to be more subpopulation specific - the monogenomic distribution is from the total population; so this is measuring an RH difference from the overall population to the subgroup - would need to refactor this to take in IBx distributions per subgroup only. 
@@ -911,7 +912,7 @@ def process_nested_rh(nested_dict, sampling_df, ibx_dist_dict, inf_ibx):
 
                                     yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
 
-    return yearly_rh_df, sample_rh
+    return yearly_rh_df, all_inf_rh
     
 
 
@@ -1058,12 +1059,7 @@ def run_time_summaries(sample_df,
                         how='outer')       
             inf_ibx_summary_df['sampling_scheme'] = sampling_column  
             all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
-
-            print(all_inf_ibx["infIndex"].dtype)
-            print(all_inf_rh_df["infIndex"].dtype)
-            print(all_inf_rh_df.head())
             all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
-            print(all_inf_df.head())
         else:
             all_inf_df = pd.DataFrame() 
 
