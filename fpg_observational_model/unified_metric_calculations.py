@@ -567,14 +567,16 @@ def process_individual_ibx(nested_dict, individual_ibx_df, ibx_prefix):
                     if not subset_df.empty:
                         if isinstance(key, tuple):
                             key_year, subgroup = key
+                            subgroup = str(subgroup)
                         else:
-                            key_year, subgroup = key, None    
+                            key_year, subgroup = key, None
+
 
                         result = _comprehensive_stats(subset_df[f"{ibx_prefix}_mean"], f"ind-{ibx_prefix}").to_dict()
                         summary = {
                             'comparison_type': comparison_type,
                             'year_group': str(key_year),
-                            'subgroup': str(subgroup),
+                            'subgroup': subgroup,
                             **result
                             }
                         merged_df = pd.concat([merged_df, pd.DataFrame([summary])], ignore_index=True)            
@@ -1043,23 +1045,36 @@ def run_time_summaries(sample_df,
         all_summary_dataframes.append(summary_stats)
         print(f"Final summary for {sampling_column}: {summary_stats.shape}")   
 
-    if not all_inf_ibx.empty:
-        inf_ibx_summary_df = pd.DataFrame()
-        for ibx_category in user_ibx_categories:
-            within_inf_summary = process_individual_ibx(nested_dict, all_inf_ibx, ibx_category)
-            inf_ibx_summary_df = pd.merge([inf_ibx_summary_df, within_inf_summary], on=['comparison_type', 'year_group', 'subgroup'], how='outer') if not inf_ibx_summary_df.empty else within_inf_summary
-        all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
-        all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
-    else:
-        all_inf_df = pd.DataFrame() 
+        if not all_inf_ibx.empty:
+            inf_ibx_summary_df = pd.DataFrame()
+            for ibx_category in user_ibx_categories:
+                within_inf_summary = process_individual_ibx(nested_dict, all_inf_ibx, ibx_category)
+                if inf_ibx_summary_df.empty:
+                    inf_ibx_summary_df = within_inf_summary
+                else:
+                    inf_ibx_summary_df = pd.merge(
+                        inf_ibx_summary_df, within_inf_summary, 
+                        on=['comparison_type', 'year_group', 'subgroup'], 
+                        how='outer')       
+            inf_ibx_summary_df['sampling_scheme'] = sampling_column  
+            all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
+
+            print(all_inf_ibx["infIndex"].dtype)
+            print(all_inf_rh_df["infIndex"].dtype)
+            print(all_inf_rh_df.head())
+            all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
+            print(all_inf_df.head())
+        else:
+            all_inf_df = pd.DataFrame() 
 
 
     if all_summary_dataframes:
         final_summary = pd.concat(all_summary_dataframes, ignore_index=True)
         if not inf_ibx_summary_df.empty:
+            final_summary['year_group'] = final_summary['year_group'].astype(str)
             final_summary = final_summary.merge(
                 inf_ibx_summary_df, 
-                on=['comparison_type', 'year_group', 'subgroup'], 
+                on=['sampling_scheme', 'comparison_type', 'year_group', 'subgroup'], 
                 how='left'
             )
         print(f"FINAL concatenated summary: {final_summary.shape}")
