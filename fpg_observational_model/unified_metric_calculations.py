@@ -1057,7 +1057,7 @@ def run_time_summaries(sample_df,
                         inf_ibx_summary_df, within_inf_summary, 
                         on=['comparison_type', 'year_group', 'subgroup'], 
                         how='outer')       
-            inf_ibx_summary_df['sampling_scheme'] = sampling_column  
+            inf_ibx_summary_df['sampling_scheme'] = sampling_column 
             all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
             all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
         else:
@@ -1068,6 +1068,8 @@ def run_time_summaries(sample_df,
         final_summary = pd.concat(all_summary_dataframes, ignore_index=True)
         if not inf_ibx_summary_df.empty:
             final_summary['year_group'] = final_summary['year_group'].astype(str)
+            inf_ibx_summary_df['year_group'] = inf_ibx_summary_df['year_group'].astype(str)
+
             final_summary = final_summary.merge(
                 inf_ibx_summary_df, 
                 on=['sampling_scheme', 'comparison_type', 'year_group', 'subgroup'], 
