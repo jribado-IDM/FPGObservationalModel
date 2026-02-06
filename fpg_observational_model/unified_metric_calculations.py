@@ -930,11 +930,15 @@ def run_time_summaries(sample_df,
     sampling_columns = df.filter(regex = "rep").columns.to_list()
     
     all_summary_dataframes = []
-    all_inf_ibx = pd.DataFrame() 
-    all_inf_rh = []
     all_ibx_dist_dict = {}
+    all_inf_ibx_df = pd.DataFrame()
 
     for sampling_column in sampling_columns:
+        
+        sample_inf_ibx = {}
+        sample_inf_ibx_df = pd.DataFrame()
+        sample_inf_rh = []
+
         sampling_df = df[df[sampling_column].notna()]
 
         nested_dict = identify_nested_comparisons(sampling_df, sampling_column, config = subpop_config)
@@ -995,7 +999,7 @@ def run_time_summaries(sample_df,
                                 rh_summary, sample_rh = process_nested_rh(timescale_dict, sampling_df, ibx_dist_dict, ibx_inf)
    
                                 yearly_rh_df = pd.concat([yearly_rh_df, rh_summary], ignore_index=True)
-                                all_inf_rh.append(sample_rh) 
+                                sample_inf_rh.append(sample_rh) 
                                 
                                 summary_stats = summary_stats.merge(yearly_rh_df, on=['comparison_type', 'year_group', 'subgroup'], how='left')
 
@@ -1005,14 +1009,10 @@ def run_time_summaries(sample_df,
                             all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
 
                         if not ibx_inf.empty:
-                            existing_cols = [col for col in all_inf_ibx.columns if col.startswith(ibx_category)]
-    
-                            if len(existing_cols) > 0 or all_inf_ibx.empty:
-                                # Columns with this prefix exist -> concat rows
-                                all_inf_ibx = pd.concat([all_inf_ibx, ibx_inf], ignore_index=True)
+                            if ibx_category not in sample_inf_ibx:
+                                sample_inf_ibx[ibx_category] = ibx_inf
                             else:
-                                # New metric type -> merge columns
-                                all_inf_ibx = all_inf_ibx.merge(ibx_inf, on='infIndex', how='outer')    
+                                sample_inf_ibx[ibx_category] = pd.concat([sample_inf_ibx[ibx_category], ibx_inf], ignore_index=True)  
                             
                         if not ibx_summary.empty:
                             merge_keys = ['comparison_type', 'year_group', 'subgroup']
@@ -1041,42 +1041,45 @@ def run_time_summaries(sample_df,
             # Add final summary to collection
             if ibx_category not in all_ibx_dist_dict:
                 all_ibx_dist_dict[ibx_category] = {}
-            all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict
+            all_ibx_dist_dict[ibx_category][sampling_column] = ibx_dist_dict  
 
-        all_summary_dataframes.append(summary_stats)
-        print(f"Final summary for {sampling_column}: {summary_stats.shape}")   
+        if sample_inf_ibx:
+            for keys, summary in sample_inf_ibx.items():
+                summary = summary.reset_index(drop=True)
 
-        if not all_inf_ibx.empty:
-            inf_ibx_summary_df = pd.DataFrame()
-            for ibx_category in user_ibx_categories:
-                within_inf_summary = process_individual_ibx(nested_dict, all_inf_ibx, ibx_category)
-                if inf_ibx_summary_df.empty:
-                    inf_ibx_summary_df = within_inf_summary
+                if sample_inf_ibx_df.empty:
+                    sample_inf_ibx_df = summary
                 else:
-                    inf_ibx_summary_df = pd.merge(
-                        inf_ibx_summary_df, within_inf_summary, 
+                    sample_inf_ibx_df = sample_inf_ibx_df.merge(summary, on='infIndex', how='outer')    
+
+            sample_ibx_summary = pd.DataFrame()
+            for ibx_category in user_ibx_categories:
+                within_inf_summary = process_individual_ibx(nested_dict, sample_inf_ibx_df, ibx_category)
+                if sample_ibx_summary.empty:
+                    sample_ibx_summary = within_inf_summary
+                else:
+                    sample_ibx_summary = pd.merge(
+                        sample_ibx_summary, within_inf_summary, 
                         on=['comparison_type', 'year_group', 'subgroup'], 
                         how='outer')       
-            inf_ibx_summary_df['sampling_scheme'] = sampling_column 
-            all_inf_rh_df  = pd.concat(all_inf_rh, ignore_index=True)
-            all_inf_df = pd.merge(all_inf_ibx, all_inf_rh_df, on='infIndex', how='outer')
+            
+            summary_stats = summary_stats.merge(sample_ibx_summary, on=['comparison_type', 'year_group', 'subgroup'], how='left')
+            all_summary_dataframes.append(summary_stats)
+            
+            sample_inf_merge = pd.merge(sample_inf_ibx_df, 
+                                  pd.concat(sample_inf_rh, ignore_index=True), 
+                                  on='infIndex', how='outer')
+            all_inf_ibx_df = pd.concat([all_inf_ibx_df, sample_inf_merge], ignore_index=True) if not all_inf_ibx_df.empty else sample_inf_merge
         else:
-            all_inf_df = pd.DataFrame() 
+            all_summary_dataframes.append(summary_stats)
+        
+        print(f"Final summary for {sampling_column}: {summary_stats.shape}")
 
 
     if all_summary_dataframes:
         final_summary = pd.concat(all_summary_dataframes, ignore_index=True)
-        if not inf_ibx_summary_df.empty:
-            final_summary['year_group'] = final_summary['year_group'].astype(str)
-            inf_ibx_summary_df['year_group'] = inf_ibx_summary_df['year_group'].astype(str)
-
-            final_summary = final_summary.merge(
-                inf_ibx_summary_df, 
-                on=['sampling_scheme', 'comparison_type', 'year_group', 'subgroup'], 
-                how='left'
-            )
         print(f"FINAL concatenated summary: {final_summary.shape}")
         print(f"FINAL columns: {list(final_summary.columns)}")
-        return final_summary, all_inf_df, all_ibx_dist_dict
+        return final_summary, all_inf_ibx_df, all_ibx_dist_dict
     else:
         return pd.DataFrame(), pd.DataFrame(), {}    
