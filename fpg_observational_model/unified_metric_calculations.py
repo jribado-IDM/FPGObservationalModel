@@ -652,12 +652,12 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
     fws_stats_list = []
 
     # Helper function for Fws calculation
-    def calc_fws_for_sample(sample_het_list):
+    def calc_fws_for_sample(sample_het_list, maf_bins, het_bins):
         sample_het = np.array(sample_het_list)
         try:
             sample_het_by_bin = pd.Series(sample_het).groupby(maf_bins).mean()
             combined = pd.DataFrame({
-                'pop_het': group_het_by_bin,
+                'pop_het': het_bins,
                 'sample_het': sample_het_by_bin
             }).dropna()
             
@@ -672,6 +672,7 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
             return fws
         except:
             return np.nan
+ 
     
     # Get year-level indices (same as process_nested_ibx)
     if 'group_year' in nested_indices.keys():
@@ -700,8 +701,9 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
         # Calculate population-level heterozygosity once per year
         matrix = get_matrix(ibs_matrix)[genome_indices, :]
         group_af = np.sum(matrix == 1, axis=0) / matrix.shape[0]
+        group_maf = np.minimum(group_af, 1 - group_af) 
         group_het = calculate_heterozygosity(matrix)
-        maf_bins = pd.cut(group_af, bins=np.linspace(0, 0.5, 11), labels=False) + 1
+        maf_bins = pd.cut(group_maf, bins=np.linspace(0, 0.5, 11), labels=False) + 1
         group_het_by_bin = pd.Series(group_het).groupby(maf_bins).mean()
     
         
@@ -711,19 +713,26 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
             if comparison_type in ['group_year', 'group_month', 'season_bins']:
                 # Year-level calculation
                 year_subset = year_subset.copy()
-                year_subset['fws'] = year_subset['heterozygosity'].apply(calc_fws_for_sample)
+                year_subset['fws'] = year_subset['heterozygosity'].apply(lambda x: calc_fws_for_sample(x, maf_bins,group_het_by_bin))
                 valid_fws = year_subset['fws'].dropna()
                 
-                if len(valid_fws) > 0:
-                    fws_summary = _comprehensive_stats(valid_fws, 'fws')
-                    fws_stats_list.append({
+                fws_stats_dict = {
                         'comparison_type': comparison_type,
                         f'{timescale}_group': year,
                         'subgroup': None,
                         'allele_frequencies': np.round(group_af, 3).tolist(),
-                        'heterozygosity_per_position': np.round(group_het, 3).tolist(),
+                        'heterozygosity_per_position': np.round(group_het, 3).tolist()
+                }    
+
+                if len(valid_fws) > 0:
+                    fws_summary = _comprehensive_stats(valid_fws, 'fws')
+                    fws_stats_list.append({
+                        **fws_stats_dict,
                         **fws_summary.to_dict()
                     })
+                else:
+                    fws_stats_list.append({**fws_stats_dict})    
+
             else:
                 # Handle nested groups within this year
                 for key, nested_data in group_data.items():
@@ -742,44 +751,42 @@ def process_nested_fws(nested_indices, sampling_df, ibs_matrix = 'ibs_matrix'):
                                     if len(subgroup_genome_indices) > 0:
                                         subgroup_matrix = get_matrix(ibs_matrix)[subgroup_genome_indices, :]
                                         subgroup_af = np.sum(subgroup_matrix == 1, axis=0) / subgroup_matrix.shape[0]
+                                        subgroup_maf = np.minimum(subgroup_af, 1 - subgroup_af)
                                         subgroup_het = calculate_heterozygosity(subgroup_matrix)
-                                        subgroup_maf_bins = pd.cut(subgroup_af, bins=np.linspace(0, 0.5, 11), labels=False) + 1
+                                        subgroup_maf_bins = pd.cut(subgroup_maf, bins=np.linspace(0, 0.5, 11), labels=False) + 1
                                         subgroup_het_by_bin = pd.Series(subgroup_het).groupby(subgroup_maf_bins).mean()
                                         
-                                        # Recalculate Fws with subgroup-specific heterozygosity
-                                        def calc_fws_subgroup(sample_het_list):
-                                            sample_het = np.array(sample_het_list)
-                                            try:
-                                                sample_het_by_bin = pd.Series(sample_het).groupby(subgroup_maf_bins).mean()
-                                                combined = pd.DataFrame({
-                                                    'pop_het': subgroup_het_by_bin,
-                                                    'sample_het': sample_het_by_bin
-                                                }).dropna()
-                                                
-                                                if len(combined) == 0:
-                                                    return np.nan
-                                                
-                                                X = combined['pop_het'].values.reshape(-1, 1)
-                                                y = combined['sample_het'].values
-                                                model = LinearRegression(fit_intercept=False)
-                                                model.fit(X, y)
-                                                return round(1 - model.coef_[0], 3)
-                                            except:
-                                                return np.nan
-                                        
-                                        subset_df.loc[:, 'fws'] = subset_df['heterozygosity'].apply(calc_fws_subgroup)
+                                        subset_df.loc[:, 'fws'] = subset_df['heterozygosity'].apply(lambda x: calc_fws_for_sample(x, subgroup_maf_bins, subgroup_het_by_bin))
+
+                                        fws_stats_dict = {
+                                            'comparison_type': comparison_type,
+                                            f'{timescale}_group': str(key_year),
+                                            'subgroup': str(subgroup),
+                                            'allele_frequencies': np.round(subgroup_af, 3).tolist(),
+                                            'heterozygosity_per_position': np.round(subgroup_het, 3).tolist()
+                                        }    
+
                                         valid_fws = subset_df['fws'].dropna()
-                                        
                                         if len(valid_fws) > 0:
                                             fws_summary = _comprehensive_stats(valid_fws, 'fws')
                                             fws_stats_list.append({
-                                                'comparison_type': comparison_type,
-                                                f'{timescale}_group': str(key_year),
-                                                'subgroup': str(subgroup),
-                                                'allele_frequencies': np.round(subgroup_af, 3).tolist(),
-                                                'heterozygosity_per_position': np.round(subgroup_het, 3).tolist(),
+                                                **fws_stats_dict,
                                                 **fws_summary.to_dict()
                                             })
+                                        else:
+                                            if np.all(subgroup_het == 0):
+                                                fws_stats_list.append({
+                                                    **fws_stats_dict,
+                                                    'fws_mean': 0.0,
+                                                    'fws_median': 0.0,
+                                                    'fws_std': 0.0,
+                                                    'fws_q25': 0.0,
+                                                    'fws_q75': 0.0,
+                                                    'fws_min': 0.0,
+                                                    'fws_max': 0.0
+                                                })
+                                            else:    
+                                                fws_stats_list.append(fws_stats_dict)    
         
     if fws_stats_list:
         return pd.DataFrame(fws_stats_list)
@@ -801,7 +808,11 @@ def sample_from_distribution(dist_dict, n_bootstraps = 200, exclude_keys=[1]):
     values = list(filtered_dict.keys())
     weights = list(filtered_dict.values())
 
-    distribution_list = np.random.choice(values, size=n_bootstraps, p=np.array(weights)/sum(weights))
+    if filtered_dict:
+        distribution_list = np.random.choice(values, size=n_bootstraps, p=np.array(weights)/sum(weights))
+    else:
+        # Account for extreme scenarios where there are no values to sample from after filtering (e.g. all IBS=1 pairs, clonal population)
+        distribution_list = np.array([])    
 
     return distribution_list
 
@@ -836,9 +847,6 @@ def calculate_population_rh(df, monogenomic_dict, n_mono_boostraps=200):
     - Polygenomic sample heterozygosity is calculated as the proportion of Ns in the barcode, assuming all alleles in an infection are detectable. Updates to make this more or less sensitive to minor alleles can be made in the generate_het_barcode function.
     """
 
-    
-    # coi2_superinfections = df[(df['effective_coi'] == 2) & (df['cotx'] == False)]
-    # rh_mono_mean = round(coi2_superinfections['ibs_mean'].mean(), 3)
     poly_samples = df[df['effective_coi'] > 1].copy()
     if 'barcode_N_prop' not in poly_samples.columns:
         poly_samples['barcode_N_prop'] = poly_samples.apply(
@@ -847,21 +855,21 @@ def calculate_population_rh(df, monogenomic_dict, n_mono_boostraps=200):
     
     bootstrap_list = sample_from_distribution(monogenomic_dict, n_bootstraps=n_mono_boostraps)
     
-    poly_samples['individual_inferred_rh'] = poly_samples.apply(lambda row: calculate_individual_rh(row['barcode_N_prop'], bootstrap_list), axis=1)
-
-    rh_measurements = pd.DataFrame([{
-        # 'rh_mono_count': len(coi2_superinfections),
-        # 'rh_mono_measured_mean': rh_mono_mean,
-        # 'rh_mono_measured_median': round(coi2_superinfections['ibs_mean'].median(), 3),
-        # 'rh_mono_measured_std': round(coi2_superinfections['ibs_mean'].std(), 3),
-        # 'rh_poly_count': len(poly_samples),
-        # 'rh_poly_measured_mean': round(poly_samples['individual_measured_rh'].mean(), 3),
-        # 'rh_poly_measured_median': round(poly_samples['individual_measured_rh'].median(), 3),
-        # 'rh_poly_measured_std': round(poly_samples['individual_measured_rh'].std(), 3),
+    if len(bootstrap_list) > 0:
+        poly_samples['individual_inferred_rh'] = poly_samples.apply(lambda row: calculate_individual_rh(row['barcode_N_prop'], bootstrap_list), axis=1)
+        rh_measurements = pd.DataFrame([{
         'rh_poly_inferred_mean': round(poly_samples['individual_inferred_rh'].mean(), 3),
         'rh_poly_inferred_median': round(poly_samples['individual_inferred_rh'].median(), 3),
         'rh_poly_inferred_std': round(poly_samples['individual_inferred_rh'].std(), 3)
-    }])
+        }])
+
+    else:    
+        poly_samples['individual_inferred_rh'] = np.nan
+        rh_measurements = pd.DataFrame([{
+            'rh_poly_inferred_mean': np.nan,
+            'rh_poly_inferred_median': np.nan,
+            'rh_poly_inferred_std': np.nan
+        }])
 
     return rh_measurements, poly_samples[['infIndex', 'individual_inferred_rh']]
 
@@ -1052,9 +1060,9 @@ def run_time_summaries(sample_df,
                 else:
                     sample_inf_ibx_df = sample_inf_ibx_df.merge(summary, on='infIndex', how='outer')    
 
-            sample_ibx_summary = pd.DataFrame()
-            for ibx_category in user_ibx_categories:
-                within_inf_summary = process_individual_ibx(nested_dict, sample_inf_ibx_df, ibx_category)
+                sample_ibx_summary = pd.DataFrame()
+           
+                within_inf_summary = process_individual_ibx(nested_dict, sample_inf_ibx_df, keys)
                 if sample_ibx_summary.empty:
                     sample_ibx_summary = within_inf_summary
                 else:
