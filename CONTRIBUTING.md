@@ -105,7 +105,6 @@ that meet the following criteria are more likely to be merged:
 *   Otherwise, sample code demonstrating old and new behavior (this can be in the PR comment on
     GitHub, not necessarily committed in the repo)
 
-If you have additional questions or comments, contact idmsupport@gatesfoundation.org.
 
 ## Resources
 
