@@ -19,6 +19,10 @@ included in the following README files:
 
    -  [Project README](https://github.com/EMOD-Hub/FPGObservationalModel/blob/genmoz_metrics/README.md): Setup and project overview.
 
+## Discussions
+
+have a comment or a question? Check out our [Discussions space](https://github.com/orgs/EMOD-Hub/discussions).
+
 ## Contribution types
 
 We welcome the following types of contributions:
