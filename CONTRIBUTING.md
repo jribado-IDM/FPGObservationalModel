@@ -23,7 +23,7 @@ included in the following README files:
 
 We welcome the following types of contributions:
 
-1. Issues:
+1. [Issues:](https://github.com/EMOD-Hub/issues-and-discussions/issues)
 
     * Bug reports.
     * Feature requests.
@@ -47,7 +47,7 @@ requesting a new feature or reporting a bug.
 1.  First, review the FPGObservationalModel
     [documentation](https://github.com/EMOD-Hub/FPGObservationalModel/blob/genmoz_metrics/README.md)
 	to see if there is already functionality that supports what you want to do. 
-2.  Search the existing [issues](https://github.com/EMOD-Hub/FPGObservationalModel/issues)
+2.  Search the existing [issues](https://github.com/EMOD-Hub/issues-and-discussions/issues)
     to see if there is already one that contains your feedback. If there is,
 	**add a thumbs up reaction** to convey your interest in the issue being addressed. This helps the
     team gauge interest without the noise of comments, which trigger notifications to all watchers.
