@@ -21,7 +21,7 @@ included in the following README files:
 
 ## Discussions
 
-have a comment or a question? Check out our [Discussions space](https://github.com/orgs/EMOD-Hub/discussions).
+Have a comment or a question? Check out our [Discussions space](https://github.com/orgs/EMOD-Hub/discussions).
 
 ## Contribution types
 
