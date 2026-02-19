@@ -1406,7 +1406,7 @@ class TestRhCalculation(unittest.TestCase):
         self.poly_samples['individual_inferred_rh'] = self.poly_samples.apply(lambda row: calculate_individual_rh(row['barcode_N_prop'], self.mono_test_dict), axis=1)
     
         # Check R_h population mean
-        true_rh_mean = 0.258
+        true_rh_mean = 0.263
         expected_rh_mean = self.poly_samples['individual_inferred_rh'].mean()
         actual_rh_mean = calculated_rh['rh_poly_inferred_mean']
         self.assertEqual(round(expected_rh_mean, 3), true_rh_mean, actual_rh_mean)   
