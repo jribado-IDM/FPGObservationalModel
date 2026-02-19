@@ -45,7 +45,7 @@ Each config entry will match this format, with the available options:
 ~~~
     {user_provided_name:
         {
-        'method': ['random', 'seasonal', 'age'],
+        'method': ['random', 'seasonal'],
                 'n_samples_year': Int,
                 'replicates': 2,
                 'method_params': {
@@ -55,7 +55,7 @@ Each config entry will match this format, with the available options:
     }
 ~~~
 
-There are three broad method options for sampling:
+There are two broad method options for temporal sampling:
 1) 'random' - will sample N infections per year, tends to match seasonality cases. Can be further directed with the following 'method_params' options:
     - 'population_proportion': list, N populations. Used to sample from the source or sink only, equally, etc. Within population comparisons of genetic metrics can be specified below. Confirm the total number of samples per year * proportion reflects the minimum numbers of infections desired per population.
     - 'monogenomic_proportion': False or float for true (< 1). Will bias the sampling to include fewer or more monogenomic infections than may be the Bool modeled proportion. Used to compare the effect of metrics derived from monogenomic (e.g. unique proportion) or polygenomic samples (e.g. co-transmission proportion, Rh)
@@ -63,10 +63,6 @@ There are three broad method options for sampling:
 
 2) 'seasonal': Will sample N infections per year, each in the wet or the dry season to compare temporal sampling effects. Currently, the model is set-up for the consistent Sahelian seasonality, must update for other seasonality simulation scenarios. If an intervention start time is provided, this sampling frame is unaffected - the simulation years and months are used to make sure sequential seasonal groupings. Can be further refined with following 'method_params' options:
     - 'season': 'full' for all months in the wet or dry season or 'peak' for the 3 highest and lowest case months. Months for sampling are hardcoded for both full and peak season options.  
-
-3) 'age': Will sample N infections per year, but will direct which age individuals are presented most in the population regardless of age distribution specified in the model. Use for comparing sampling schemes based on age, e.g. mirror biased sampling such as school surveys. Can be further customized with following 'method_params' options:
-    - age_bins: List with the upper bound of each group. Default: [5, 15, 100]
-    - age_bin_labels: List containing names for each age grouping. Default: ['0-5yrs', '5-15yrs', '15+yrs']
 
 
 ### Subpopulation comparisons
@@ -76,7 +72,6 @@ Above options will calculate metrics for all samples in a population for each sa
  The subpopulation options supported include:
 - 'add_monthly':  Provide summary statistics by month for all infections. Excludes IBx and Rh relatedness calculations to reduce computational time and memory and real data calculations are not computed at this scale. This default can be changed in the run_time_summaries
  function in unified_metric_calculations by using the complete nested dictionary instead of the nested dictionary ignoring the monthly groupings on infections. (May require further testing and debugging.)
-- 'populations':  Defined by the population node in EMOD
 - 'polygenomic':  Is polygenomic = 1, else monogenomic = 0
 - 'symptomatic':  Is symptomatic = 1, else asymptomatic = 0
 - 'age_bins':  Default age bins: 0-5, 5-15, 15+
@@ -121,9 +116,10 @@ This section defines with genetic metrics will be calculated for each set as boo
 ``{sim_id}_FPG_ModelSummaries.csv``: File containing the genetic metrics across columns and the years, season, and subpopulation comparisons as columns. Addition of summary statistic columns can vary based on user options for metric calculations. 
 
 - 'sampling_scheme': Grouping variable for the sampling scheme applied (matches 'sampling' options in config).
-- 'comparison_type': Identifies with sampling scheme groupings, such as yearly or seasonal groups, or specified subpopulations (matches 'subpopulation_comparison' options in config).
-- 'year_group': Specifies the year (either simulation year or intervention shifted year) or the seasonal grouping bin for summary statistics.
-- 'sub_group': Sepcifies the additional groupings within subpopulations, e.g. whether True/False for polygenomic or symptomatic.  
+- 'time_group': The time window used for grouping, either 'group_month', 'group_year', or 'group_season'. 
+- 'time_value': Specifies the year (either simulation year or intervention shifted year), seasonal grouping bin, or month for summary statistics.
+- 'comparison_type': Identifies with sampling scheme groupings, such as 'all' infections in a time period, by subpopulations such as 'polygenomic' or 'symptomatic'.
+- 'comparison_group': The specific group identified for 'comparison_type', e.g. whether True/False for polygenomic or symptomatic. 
 - 'n_infections': Counts for the number of infections in each sampling scheme, for each year and subpopulation grouping specified in the observational model run. These are the actual number of infections that were available in the report by grouping and may be lower than the specified targets.
 - '{true/effective/genotype}_poly_coi_count': The number of infections per grouping that have a COI > 2. True is the modeled number of genomes tracked, which effective is the number of unique and detectable genomes in an infection by ancestry, and genome is the number of unique detectable genomes in an infection by bi-allelic representation.
 - '{true/effective/genotype_poly_coi_prop}': The proportion of infections per grouping that have a COI > 2. Calculated as '{true/effective/genotype}_poly_coi_count'/n_infections.
@@ -144,21 +140,22 @@ This section defines with genetic metrics will be calculated for each set as boo
 
 
 
-``{sim_id}-{ibd/ibs}_distributions.json``: To avoid large pairwise matrices s output, to further investigate population level IBs distributions one could use the JSON file with the IBx calculated value as the key up to two decimal places and the number of pairwise counts as a the value. It matches the output CSV in matching sampling, comparison_types, and subpopulations. 
+``{sim_id}-{ibd/ibs}_distributions.json``: To avoid large pairwise matrices s output, to further investigate population level IBs distributions one could use the JSON file with the IBx calculated value as the key up to two decimal places and the number of pairwise counts as a the value. It matches the output CSV in matching sampling, comparison_types and groups by population.
 
 ~~~
-  {
+  {"population_N": {
       "user_specified_name": { # "sampling_scheme 
-          "population": { # comparision_type Like group_year, season_bin, population polygenomic, etc.
+          "symptomatic": { # comparision_type Like group_year, season_bin, population polygenomic, etc.
               "(2, 0)": {       # For subpopulations, the key here can be tuple, with the first item is the group_year, and the second is the group identifier. For example, this is for year 2, population 0
                   "0.5": 54,
                   "0.7": 41,
                   "0.9": 7,
                   "1": 4
-              }
+                }
 
-          }
-      }
+            }
+        }
+     }
   }
 ~~~    
 
@@ -170,11 +167,27 @@ In the the absence of the mapping file, one can look for the directories belongi
 
 ~~~
 # Example pull of data
-EXPERIMENT_NAME="/mnt/calculon2/jsuresh/output/maka fpg 10k - 6yr - strong ITNs in_20250522_195001/"
+EXPERIMENT_NAME="/mnt/calculon2/{user}/output/{emod_experiment_id}"
 OUTPUT_FILE="experiment_mapping.csv"
 
 { echo "output_name,input_dir"; find "$EXPERIMENT_NAME" -name "output" -type d | sed 's|.*/\([0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}\)/output$|\1,"\0"|'; } > "$OUTPUT_FILE"
 ~~~
+
+## IDM Developer Notes
+
+If updating the repository to run the observational model on COMPs, these are the steps to set up the Singularity image.
+
+1) Update the following files with a new `1.0.0..dev{n+1}` version number:
+    - docker/Dockerfile: Line 52
+    - docker/Singularity: Line 61
+    - pyproject.toml: Line 7
+
+2) After committing/merging to EMOD-Hub branch without errors, click on Actions -> Promote package to production and match the new version name when prompted.
+
+3) Actions -> Build and push similarity image. Keep all the same information form COMPs or specify file locations as needed. 
+
+4) Pass the docker/ObsModel_rocky.id to emodpy-malaria files to run with new simulations. 
+
 
 # Disclaimer
 The code in this repository was developed by IDM and other collaborators to support our joint research on flexible agent-based modeling.

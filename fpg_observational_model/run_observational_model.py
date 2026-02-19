@@ -44,13 +44,7 @@ def get_default_config():
             #     'method_params': {
             #         'season': 'full', # Options: full or peak; currently hardcoded to match Senegal's seasonality; update for other scenarios in unified_sampling.py
             #     }
-            # },
-            # 'age': { # Example of how to set-up a sampling scheme based on age, to mirror biased sampling such as school surveys and health facility comparisons. 
-            #     'method': 'age',
-            #     'n_samples_year': 15,
-            #     'replicates': 1
-            # }
-            
+            # } 
         },
         'metrics': {
             'cotransmission_proportion': True,
@@ -65,8 +59,7 @@ def get_default_config():
             'unique_genome_proportion': True # Will calculate both the proportion of unique genomes in the sampled infections to replicate phasing and from monogenomic samples with an effective COI of 1  only to match barcode limits.
         },
         'subpopulation_comparisons': { # Supported for yearly and seasonal temporal sampling schemes, not age-based sampling. 
-            'add_monthly': False,  # Whether to add monthly comparisons within each year
-            'populations': False,  # Defined by the population node in EMOD
+            'add_monthly': False,  # Whether to add monthly comparisons in addition to yearly comparisons for temporal sampling schemes
             'polygenomic': True,  # Is polygenomic = 1, else monogenomic = 0
             'symptomatic': False,  # Is symptomatic = 1, else asymptomatic = 0
             'age_bins': False     # Default age bins: 0-5, 5-15, 15+
@@ -385,7 +378,8 @@ def run_observational_model(
             print(f"Error: {infection_df_path} not found. Loading test data.")
         infection_df = pd.read_csv('test_data/test_fpg_infections.csv')
 
-        # Run sampling model
+    # Run sampling model
+    print(f"Config paramters for sampling model:\n {config}")    
     sample_df = run_sampling_model(
         input_df=infection_df,
         config=config,
@@ -405,7 +399,7 @@ def run_observational_model(
     ibs_matrix = None
     # Optional - included if need to filter out non-variant tracked sites, i.e. immunity markers or drugR for calculating genetic metrics only on neutral variant sites.
     variant_indices = None
-    #variant_indices = [0, 3, 5, 6, 8, 9, 11, 12, 14, 16, 17, 19, 20, 22, 24, 25, 27, 28, 30, 32, 33, 35, 37, 38, 40, 42, 43, 45, 47, 48, 50, 52, 53, 55, 57, 58, 60, 62, 63, 65, 67, 68, 69, 71, 73, 75, 77, 78, 79, 80, 82, 84, 86, 88, 89, 90, 91, 93, 94, 96, 98, 99, 101, 102, 103, 104, 106, 107, 109, 110, 112, 113, 115, 116, 117, 118, 119, 121, 122, 124, 125, 127, 128, 130, 131, 132, 133, 134, 135, 137, 138, 139, 141, 142, 144, 145, 146, 148, 149, 150]
+    # variant_indices = []
 
     if config['metrics']['identity_by_descent']:
         user_specified_ibx.append('ibd')
@@ -476,53 +470,8 @@ def run_observational_model(
 
 
 #####################################################################################
-# Parallelizable wrapper function
+# Single run test
 #####################################################################################
-def process_file(file_row, output_summary_dir, config_path=None, verbose=False):
-    """
-    Process a single file for parallel execution.
-    
-    Parameters:
-        file_row: pandas Series or dict with 'output_name' and 'input_dir' columns
-        output_summary_dir: Directory to save outputs
-        config_path: Path to config file (optional)
-        verbose: Whether to print verbose output
-        
-    Returns:
-        str: Name of processed simulation
-    """
-    try:
-        # Extract information from the row
-        sim_name = file_row['output_name']
-        emod_output_path = file_row['input_dir']
-        
-        # Use default config if not specified
-        if config_path is None or not os.path.exists(config_path):
-            config_path = ""  # Will trigger default config usage
-            
-        # Create output directory for this simulation
-        output_path = os.path.join(output_summary_dir, sim_name)
-        
-        # Run the observational model
-        result = run_observational_model(
-            sim_name=sim_name,
-            emod_output_path=emod_output_path,
-            config_path=config_path,
-            output_path=output_path,
-            verbose=verbose
-        )
-        
-        return f"SUCCESS: {sim_name}"
-        
-    except Exception as e:
-        error_msg = f"ERROR processing {file_row.get('output_name', 'unknown')}: {str(e)}"
-        if verbose:
-            import traceback
-            print(f"{error_msg}\n{traceback.format_exc()}")
-        return error_msg
-
-
-# Single file test
 # Single file test
 if __name__ == "__main__":
     import argparse
@@ -568,3 +517,6 @@ if __name__ == "__main__":
         if args.verbose:
             print("\nFull traceback:")
             print(traceback.format_exc())
+
+
+            

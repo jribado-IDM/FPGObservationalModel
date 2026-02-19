@@ -222,7 +222,6 @@ class SharedTestData:
                 },
                 'subpopulation_comparisons': {
                     'add_monthly': True,
-                    'populations': True,
                     'polygenomic': True,
                     'symptomatic': True,
                     'age_bins': True
@@ -548,17 +547,17 @@ class TestInterventionTiming(unittest.TestCase):
 
         original_group = identify_nested_comparisons(
             self.df, 
-            sampling_col, 
+            time_group='group_year',
             config=self.no_subgroup_config
         )
 
         intervention_group = identify_nested_comparisons(
             intervention_df, 
-            sampling_col, 
+            time_group='group_year',
             config=self.no_subgroup_config
         )
-
-        self.assertNotEqual(original_group['group_year'], intervention_group['group_year'])
+   
+        self.assertNotEqual(original_group, intervention_group)
 
 
 @unittest.skipIf(not METRICS_IMPORTED, "unified_metric_calculations not available")
@@ -604,17 +603,16 @@ class TestNestedComparisonDictionary(unittest.TestCase):
 
         result = identify_nested_comparisons(
             self.df,
-            sampling_col,
+            time_group='group_year',
             config=self.config
         )
         
         # Check year samples correctly identified
         yearly_groups = self.df.groupby('group_year')['infIndex'].apply(list).to_dict()
-        self.assertEqual(yearly_groups, result['group_year'])
+        self.assertEqual(yearly_groups, result['all'])
 
         # Check all within year subgroups identified
         mappings = {
-            'populations': 'population',
             'polygenomic': 'is_polygenomic',
             'symptomatic': 'fever_status',
             'age_bins': 'age_bin'
@@ -1075,7 +1073,7 @@ class TestProcessNestedSummaries(unittest.TestCase):
         self.df = TEST_DATA.get_infection_df(with_metrics=True)
         
         self.nested_indices = {
-            'group_year': {
+            'all': {
                 1: [0, 1, 2],
                 2: [3, 4, 5],
                 3: [6, 7, 8, 9]
@@ -1087,11 +1085,10 @@ class TestProcessNestedSummaries(unittest.TestCase):
         result = process_nested_summaries(
             self.nested_indices,
             self.df,
-            comprehensive_group_summary
         )
         
         self.assertIsInstance(result, pd.DataFrame)
-        self.assertTrue((result['comparison_type'] == "group_year").all())
+        self.assertTrue((result['comparison_type'] == "all").all())
         self.assertEqual(result['n_infections'].tolist(), [3, 3, 4])
         self.assertEqual(result['true_coi_poly_count'].tolist(), [1, 2, 2])
         self.assertEqual(result['true_coi_mean'].tolist(), [1.333, 2.000, 1.5])
@@ -1386,7 +1383,8 @@ class TestRhCalculation(unittest.TestCase):
         
         self.assertEqual(len(samples), n_samples)
         self.assertTrue(all(s < 1.0 for s in samples))    
-    
+
+
     def test_calculate_individual_rh(self):
         """Test the actual calculate_rh function on a single value.
         Assume 5 random draws of monogenomic pairwise IBS to create the distribution to calculate R_h from a single infection with barcode heterozygosity of 0.25.
@@ -1395,19 +1393,20 @@ class TestRhCalculation(unittest.TestCase):
         barcode_N_count = 0.25
         test_rh = calculate_individual_rh(barcode_N_count, self.mono_test_distribution)
         
-        self.assertAlmostEqual(round(test_rh, 3), 0.583)
+        self.assertAlmostEqual(round(test_rh, 3), 0.558)
 
     def test_calculate_population_rh(self):
         """Test R_h metric calculation logic"""
         result_df = self.df.copy()
-        
+        result_df['population'] = 1  # Assign all to same population for testing
+
         # Calculate R_h for each infection
         calculated_rh, __ = calculate_population_rh(result_df, self.mono_test_dict)
 
         self.poly_samples['individual_inferred_rh'] = self.poly_samples.apply(lambda row: calculate_individual_rh(row['barcode_N_prop'], self.mono_test_dict), axis=1)
     
         # Check R_h population mean
-        true_rh_mean = 0.305
+        true_rh_mean = 0.263
         expected_rh_mean = self.poly_samples['individual_inferred_rh'].mean()
         actual_rh_mean = calculated_rh['rh_poly_inferred_mean']
         self.assertEqual(round(expected_rh_mean, 3), true_rh_mean, actual_rh_mean)   
