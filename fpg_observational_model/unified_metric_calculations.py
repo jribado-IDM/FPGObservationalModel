@@ -836,7 +836,6 @@ def run_time_summaries(sample_df,
 
     for sampling_column_name in sampling_columns:
         sampling_df = df[df[sampling_column_name].notna()]
-        print(sampling_df.head())
         print(f"Starting: {sampling_column_name}")
 
         # --- Resolve time group ---
