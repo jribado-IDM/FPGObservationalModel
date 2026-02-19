@@ -222,7 +222,6 @@ class SharedTestData:
                 },
                 'subpopulation_comparisons': {
                     'add_monthly': True,
-                    'populations': True,
                     'polygenomic': True,
                     'symptomatic': True,
                     'age_bins': True
@@ -614,7 +613,6 @@ class TestNestedComparisonDictionary(unittest.TestCase):
 
         # Check all within year subgroups identified
         mappings = {
-            'populations': 'population',
             'polygenomic': 'is_polygenomic',
             'symptomatic': 'fever_status',
             'age_bins': 'age_bin'
@@ -1075,7 +1073,7 @@ class TestProcessNestedSummaries(unittest.TestCase):
         self.df = TEST_DATA.get_infection_df(with_metrics=True)
         
         self.nested_indices = {
-            'group_year': {
+            'all': {
                 1: [0, 1, 2],
                 2: [3, 4, 5],
                 3: [6, 7, 8, 9]
@@ -1091,7 +1089,7 @@ class TestProcessNestedSummaries(unittest.TestCase):
         )
         
         self.assertIsInstance(result, pd.DataFrame)
-        self.assertTrue((result['comparison_type'] == "group_year").all())
+        self.assertTrue((result['comparison_type'] == "all").all())
         self.assertEqual(result['n_infections'].tolist(), [3, 3, 4])
         self.assertEqual(result['true_coi_poly_count'].tolist(), [1, 2, 2])
         self.assertEqual(result['true_coi_mean'].tolist(), [1.333, 2.000, 1.5])
