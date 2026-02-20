@@ -28,19 +28,19 @@ def get_default_config():
         },
         'intervention_start_month': 29, # Provide month where an intervention is applied. Currently any sampling pre/post intervention for a single intervention is supported. 
         'sampling_configs': {
-            'random': {
-                'method': 'random',
-                'n_samples_year': 100,
-                'replicates': 2,
-                'method_params': {
-                    'population_proportions': [1, 0], # Use to sample from the source or sink only, equally, etc. Within population comparisons of genetic metrics can be specified below - just make sure to total number of samples per year * proportion reflects the numbers you want per population.
-                    'monogenomic_proportion': False, # Set to False if sampling randomly 
-                    'equal_monthly': False}
-            },
+            # 'random': {
+            #     'method': 'random',
+            #     'n_samples_year': 100,
+            #     'replicates': 2,
+            #     'method_params': {
+            #         'population_proportions': [1, 0], # Use to sample from the source or sink only, equally, etc. Within population comparisons of genetic metrics can be specified below - just make sure to total number of samples per year * proportion reflects the numbers you want per population.
+            #         'monogenomic_proportion': False, # Set to False if sampling randomly 
+            #         'equal_monthly': False}
+            # },
             # 'seasonal': {
             #     'method': 'seasonal',
             #     'n_samples_year': 100,
-            #     'replicates': 2,
+            #     'replicates': 1,
             #     'method_params': {
             #         'season': 'full', # Options: full or peak; currently hardcoded to match Senegal's seasonality; update for other scenarios in unified_sampling.py
             #     }
@@ -450,7 +450,11 @@ def run_observational_model(
     sample_output_filepath = f'{output_path}/{sim_name}_FPG_SampledInfections.csv'
     # Merge in individual IBx results for sampled infections
     if not all_infection_ibx.empty:
-        sample_df = sample_df.merge(all_infection_ibx, on='infIndex', how='left')
+        # remove the monthly samples if in the df to have a smaller sampling only infection file
+        if 'month_rep0' in sample_df.columns:
+            sample_df = sample_df.drop(columns=['month_rep0'])
+            sample_df = extract_sampled_infections(sample_df)
+        sample_df = sample_df.merge(all_infection_ibx, on='infIndex', how='inner')
     sample_df.to_csv(sample_output_filepath, index=False)
 
     save_ibx_distributions = True
