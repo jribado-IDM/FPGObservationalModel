@@ -672,8 +672,12 @@ def run_sampling_model(input_df, config, intervention_start_month=None, verbose=
     
     # Add simulation_year column if it doesn't exist
     if 'simulation_year' not in df.columns and 'year' in df.columns:
-        df['simulation_year'] = df['year'].copy()    
+        df['simulation_year'] = df['year'].copy() 
     
+    # Ensure continuous_month exists for time-based filtering    
+    if 'continuous_month' not in df.columns:
+        df = convert_month(df)  
+
     try:
         # Step 1: Apply hard filters
         if verbose:
