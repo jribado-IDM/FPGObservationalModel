@@ -49,7 +49,7 @@ RUN pip3 install --no-cache-dir "python-snappy==0.6.1"
 
 # Install the ObsModel packages
 # RUN bash -c "pip3 install -r /tmp/requirements.txt"
-RUN pip3 install --no-cache-dir "fpg-observational-model==1.0.0.dev6" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
+RUN pip3 install --no-cache-dir "fpg-observational-model==1.0.0.dev7" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
 
 # Install the emod_api package
 RUN pip3 install --no-cache-dir "emod-api>=1.33.7,<2" --extra-index-url https://packages.idmod.org/api/pypi/pypi-production/simple
